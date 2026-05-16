@@ -1,26 +1,7 @@
-print("V1PRWARE loaded")
-
-------------------------------------------------------------------------
--- services
-------------------------------------------------------------------------
-local svc = {
-    Players        = game:GetService("Players"),
-    Run            = game:GetService("RunService"),
-    Input          = game:GetService("UserInputService"),
-    RS             = game:GetService("ReplicatedStorage"),
-    WS             = game:GetService("Workspace"),
-    TweenService   = game:GetService("TweenService"),
-    TextChat       = game:GetService("TextChatService"),
-    Http           = game:GetService("HttpService"),
-}
-
-local lp  = svc.Players.LocalPlayer
-local gui = lp:WaitForChild("PlayerGui", 10)
 
 ------------------------------------------------------------------------
 -- filesystem shims
--------------------------------------------------------------------------- V1PRWARE | maintained by mitsuki | original by v1pr/glov
-
+------------------------------------------------------------------------
 local fs = {
     hasFolder = isfolder     or function() return false end,
     makeFolder= makefolder   or function() end,
@@ -176,7 +157,7 @@ local stam = {
     thread  = nil,
 }
 
--- FIX: corrected path â€” verify this in your explorer under ReplicatedStorage.Systems
+-- FIX: corrected path — verify this in your explorer under ReplicatedStorage.Systems
 local function stamModule()
     local ok, m = pcall(function() return require(svc.RS.Systems.Character.Game.Sprinting) end)
     return ok and m or nil
@@ -234,7 +215,7 @@ end)
 
 local secStatus = tabGlobal:Section({ Title = "Status", Opened = true })
 -- FIX: correct paths confirmed as Modules.Schematics.StatusEffects.*
--- Glitched is a LocalScript inside KillerExclusive.Glitched.Frame â€” handled separately
+-- Glitched is a LocalScript inside KillerExclusive.Glitched.Frame — handled separately
 local statusGroups = {
     Slowness      = { on = false, paths = { "Modules.Schematics.StatusEffects.Slowness" } },
     Hallucination = { on = false, paths = { "Modules.Schematics.StatusEffects.KillerExclusive.Hallucination" } },
@@ -255,7 +236,7 @@ local function statusBlock(path)
     if statusBackup[path] then return end
     local mod = statusResolve(path)
     if not mod then return end
-    -- Glitched is a Folder containing a Frame containing a LocalScript â€” destroy the folder
+    -- Glitched is a Folder containing a Frame containing a LocalScript — destroy the folder
     if mod:IsA("Folder") then
         statusBackup[path] = { clone = mod:Clone(), isFolder = true, parentPath = path:match("^(.-)%.?[^%.]+$") }
         mod:Destroy()
@@ -433,7 +414,7 @@ local function flowSolve(puzzle)
         puzzle.paths[ci] = {}
         for _, node in ipairs(ordered) do
             table.insert(puzzle.paths[ci], { row = node.row, col = node.col })
-            -- updateGui rebuilds connections internally via getGrid() â€” no manual gridConnections needed
+            -- updateGui rebuilds connections internally via getGrid() — no manual gridConnections needed
             puzzle:updateGui()
             task.wait(flow.nodeDelay)
         end
@@ -442,7 +423,7 @@ local function flowSolve(puzzle)
     end
 end
 
--- FIX: FlowGameManager is a Folder â€” FlowGame is the ModuleScript inside it
+-- FIX: FlowGameManager is a Folder — FlowGame is the ModuleScript inside it
 -- The module returns the u61 class table; hook u61.new to intercept new puzzle instances
 do
     local modFolder  = svc.RS:FindFirstChild("Modules")
@@ -464,10 +445,10 @@ do
                 return p
             end
         else
-            warn("[v1prware] FlowGame: failed to require FlowGame module â€” auto-solve disabled")
+            warn("[v1prware] FlowGame: failed to require FlowGame module — auto-solve disabled")
         end
     else
-        warn("[v1prware] FlowGame: Modules.Minigames.FlowGameManager.FlowGame not found â€” auto-solve disabled")
+        warn("[v1prware] FlowGame: Modules.Minigames.FlowGameManager.FlowGame not found — auto-solve disabled")
     end
 end
 
@@ -525,7 +506,7 @@ end)
 task.spawn(function()
     local remote = hbGetRemote()
     if not remote then
-        warn("[v1prware] Aimbot: could not find RemoteEvent â€” aimbot trigger disabled")
+        warn("[v1prware] Aimbot: could not find RemoteEvent — aimbot trigger disabled")
         return
     end
     remote.OnClientEvent:Connect(function(...)
@@ -557,7 +538,7 @@ local function absGui()
 end
 local function absShowLabel(show)
     local g=absGui(); if not g then return end; local lbl=g:FindFirstChild("AbsTaunt")
-    if not lbl then lbl=Instance.new("TextLabel"); lbl.Name="AbsTaunt"; lbl.Size=UDim2.new(0,500,0,50); lbl.Position=UDim2.new(0.5,-250,0.38,0); lbl.BackgroundTransparency=1; lbl.TextColor3=Color3.new(1,1,1); lbl.TextStrokeTransparency=0.4; lbl.TextStrokeColor3=Color3.new(0,0,0); lbl.Text="At least they tried đź‚"; lbl.Font=Enum.Font.GothamBold; lbl.TextSize=36; lbl.TextTransparency=1; lbl.Parent=g end
+    if not lbl then lbl=Instance.new("TextLabel"); lbl.Name="AbsTaunt"; lbl.Size=UDim2.new(0,500,0,50); lbl.Position=UDim2.new(0.5,-250,0.38,0); lbl.BackgroundTransparency=1; lbl.TextColor3=Color3.new(1,1,1); lbl.TextStrokeTransparency=0.4; lbl.TextStrokeColor3=Color3.new(0,0,0); lbl.Text="At least they tried 😂"; lbl.Font=Enum.Font.GothamBold; lbl.TextSize=36; lbl.TextTransparency=1; lbl.Parent=g end
     pcall(function() svc.TweenService:Create(lbl,TweenInfo.new(show and 0.15 or 0.5),{TextTransparency=show and 0 or 1}):Play() end)
 end
 local function absAddRing(model)
@@ -700,8 +681,8 @@ lp.CharacterAdded:Connect(function() noliStop(); noliOrigWalkSpeed = nil end)
 
 -- Killer Ability UI
 local secKillerAbilities = tabKiller:Section({ Title = "Killer Abilities", Opened = true })
-secKillerAbilities:Toggle({ Title="Sixer â€” Air Strafe",   Type="Checkbox", Default=sixerStrafeOn, Callback=function(on) sixerStrafeOn=on; cfg.set("sixerStrafeOn",on) end })
-secKillerAbilities:Toggle({ Title="c00lkidd â€” Dash Turn", Type="Checkbox", Default=coolkidWSOOn,  Callback=function(on) coolkidWSOOn=on;  cfg.set("coolkidWSOOn",on)  end })
+secKillerAbilities:Toggle({ Title="Sixer — Air Strafe",   Type="Checkbox", Default=sixerStrafeOn, Callback=function(on) sixerStrafeOn=on; cfg.set("sixerStrafeOn",on) end })
+secKillerAbilities:Toggle({ Title="c00lkidd — Dash Turn", Type="Checkbox", Default=coolkidWSOOn,  Callback=function(on) coolkidWSOOn=on;  cfg.set("coolkidWSOOn",on)  end })
 
 ------------------------------------------------------------------------
 ------------------------------------------------------------------------
@@ -1003,11 +984,11 @@ lp.CharacterAdded:Connect(function()
     if mset.puddle then scanPuddles() end
 end)
 
-secMinion:Toggle({ Title="c00lkidd Pizza Bots",   Desc="PizzaDeliveryRig â€” orange highlight", Type="Checkbox", Default=mset.pizza,  Callback=function(on) mset.pizza=on;  cfg.set("espPizza",on);  if on then scanPizza()   else clearTag("pizza")  end end })
-secMinion:Toggle({ Title="1x1x1x1 Zombies",       Desc="1x1x1x1Zombie â€” green highlight",     Type="Checkbox", Default=mset.zombie, Callback=function(on) mset.zombie=on; cfg.set("espZombie",on); if on then scanZombie()  else clearTag("zombie") end end })
+secMinion:Toggle({ Title="c00lkidd Pizza Bots",   Desc="PizzaDeliveryRig — orange highlight", Type="Checkbox", Default=mset.pizza,  Callback=function(on) mset.pizza=on;  cfg.set("espPizza",on);  if on then scanPizza()   else clearTag("pizza")  end end })
+secMinion:Toggle({ Title="1x1x1x1 Zombies",       Desc="1x1x1x1Zombie — green highlight",     Type="Checkbox", Default=mset.zombie, Callback=function(on) mset.zombie=on; cfg.set("espZombie",on); if on then scanZombie()  else clearTag("zombie") end end })
 secMinion:Toggle({ Title="JD Digital Footprints", Desc="Black disc + red glow",               Type="Checkbox", Default=mset.puddle, Callback=function(on) mset.puddle=on; cfg.set("espPuddle",on); if on then scanPuddles() else clearTag("puddle") end end })
 secMinion:Slider({ Title="Highlight Transparency", Step=0.05, Value={Min=0,Max=1,Default=mset.transparency}, Callback=function(v) mset.transparency=v; cfg.set("espMinionTrans",v); updateTransparency() end })
-secMinion:Button({ Title="đź”„ Force Rescan", Callback=function() clearTag("pizza"); clearTag("zombie"); clearTag("puddle"); task.wait(0.1); scanPizza(); scanZombie(); scanPuddles() end })
+secMinion:Button({ Title="🔄 Force Rescan", Callback=function() clearTag("pizza"); clearTag("zombie"); clearTag("puddle"); task.wait(0.1); scanPizza(); scanZombie(); scanPuddles() end })
 
 ------------------------------------------------------------------------
 -- Hitbox ESP (MassInfection + Entanglement)
@@ -1140,9 +1121,9 @@ local function musicMonitor()
 end
 secLMS:Toggle({ Title="Auto-Play on LMS", Type="Checkbox", Default=music.on, Callback=function(on) music.on=on; cfg.set("musicOn",on); if on then music.thread=task.spawn(musicMonitor) else if music.thread then task.cancel(music.thread); music.thread=nil end; musicReset() end end })
 secLMS:Dropdown({ Title="Track", Values=musicList, Value=music.selected, Callback=function(sel) music.selected=type(sel)=="table" and sel[1] or sel; cfg.set("musicSel",music.selected); task.spawn(function()musicFetch(music.selected)end) end })
-secLMS:Button({ Title="â–¶  Play",        Callback=function() musicPlay(music.selected) end })
-secLMS:Button({ Title="â–   Stop",        Callback=function() musicReset() end })
-secLMS:Button({ Title="â†“  Preload LMS", Callback=function() for name in pairs(musicTracks) do task.spawn(function()musicFetch(name)end); task.wait(0.1) end end })
+secLMS:Button({ Title="▶  Play",        Callback=function() musicPlay(music.selected) end })
+secLMS:Button({ Title="■  Stop",        Callback=function() musicReset() end })
+secLMS:Button({ Title="↓  Preload LMS", Callback=function() for name in pairs(musicTracks) do task.spawn(function()musicFetch(name)end); task.wait(0.1) end end })
 lp.CharacterAdded:Connect(function() task.wait(3); if music.on then if music.thread then task.cancel(music.thread) end; music.thread=task.spawn(musicMonitor) end end)
 
 local tabElliot  = win:Tab({ Title = "Elliot",    Icon = "pizza"     })
@@ -1345,7 +1326,7 @@ end
 
 
 ------------------------------------------------------------------------
--- GUEST1337 â€” Auto Block & Combat
+-- GUEST1337 — Auto Block & Combat
 ------------------------------------------------------------------------
 local sec_015 = tabSurSen:Section({ Title = "Auto Block & Combat", Opened = true })
 
@@ -1477,7 +1458,7 @@ local function combatFireAbility(abilityType)
     pcall(function() rem:FireServer(abilityType) end)
 end
 
--- Auto Block (Audio-based) â€” event-driven hook system
+-- Auto Block (Audio-based) — event-driven hook system
 local combatSoundHooks        = {}
 local combatSoundBlockedUntil = {}
 local combatLastBlockTime     = 0
@@ -2819,7 +2800,7 @@ do
 
     sec_029:Paragraph({
         Title   = "How it works",
-        Content = "Hooks the RemoteFunction's GetMousePosition callback. When Nova fires, the server asks the client where the mouse is â€” we return the nearest survivor's predicted position instead.",
+        Content = "Hooks the RemoteFunction's GetMousePosition callback. When Nova fires, the server asks the client where the mouse is — we return the nearest survivor's predicted position instead.",
     })
 
     local nova_enabled    = cfg.get("novaEnabled",    false)
@@ -2924,7 +2905,7 @@ do
     -- Void Rush Control (moved from Killer tab)
     local sec_029c = tabNoli:Section({ Title = "Void Rush Control", Opened = true })
     sec_029c:Toggle({
-        Title = "Noli â€” Void Rush Control", Type = "Checkbox", Default = noliVoidRushOn,
+        Title = "Noli — Void Rush Control", Type = "Checkbox", Default = noliVoidRushOn,
         Callback = function(on) noliVoidRushOn = on; cfg.set("noliVoidRushOn", on); if not on then noliStop() end end
     })
 end
