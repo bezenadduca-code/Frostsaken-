@@ -700,9 +700,8 @@ lp.CharacterAdded:Connect(function() noliStop(); noliOrigWalkSpeed = nil end)
 
 -- Killer Ability UI
 local secKillerAbilities = tabKiller:Section({ Title = "Killer Abilities", Opened = true })
-secKillerAbilities:Toggle({ Title="Sixer — Air Strafe",       Type="Checkbox", Default=sixerStrafeOn, Callback=function(on) sixerStrafeOn=on; cfg.set("sixerStrafeOn",on) end })
-secKillerAbilities:Toggle({ Title="c00lkidd — Dash Turn",     Type="Checkbox", Default=coolkidWSOOn,  Callback=function(on) coolkidWSOOn=on;  cfg.set("coolkidWSOOn",on)  end })
-secKillerAbilities:Toggle({ Title="Noli — Void Rush Control", Type="Checkbox", Default=noliVoidRushOn,Callback=function(on) noliVoidRushOn=on; cfg.set("noliVoidRushOn",on); if not on then noliStop() end end })
+secKillerAbilities:Toggle({ Title="Sixer — Air Strafe",   Type="Checkbox", Default=sixerStrafeOn, Callback=function(on) sixerStrafeOn=on; cfg.set("sixerStrafeOn",on) end })
+secKillerAbilities:Toggle({ Title="c00lkidd — Dash Turn", Type="Checkbox", Default=coolkidWSOOn,  Callback=function(on) coolkidWSOOn=on;  cfg.set("coolkidWSOOn",on)  end })
 
 ------------------------------------------------------------------------
 ------------------------------------------------------------------------
@@ -1009,6 +1008,65 @@ secMinion:Toggle({ Title="1x1x1x1 Zombies",       Desc="1x1x1x1Zombie — green 
 secMinion:Toggle({ Title="JD Digital Footprints", Desc="Black disc + red glow",               Type="Checkbox", Default=mset.puddle, Callback=function(on) mset.puddle=on; cfg.set("espPuddle",on); if on then scanPuddles() else clearTag("puddle") end end })
 secMinion:Slider({ Title="Highlight Transparency", Step=0.05, Value={Min=0,Max=1,Default=mset.transparency}, Callback=function(v) mset.transparency=v; cfg.set("espMinionTrans",v); updateTransparency() end })
 secMinion:Button({ Title="🔄 Force Rescan", Callback=function() clearTag("pizza"); clearTag("zombie"); clearTag("puddle"); task.wait(0.1); scanPizza(); scanZombie(); scanPuddles() end })
+
+------------------------------------------------------------------------
+-- Hitbox ESP (MassInfection + Entanglement)
+------------------------------------------------------------------------
+local secHitboxESP = tabVisual:Section({ Title = "Ability Hitbox ESP", Opened = true })
+
+local hitboxESP = { on = cfg.get("hitboxESPOn", false) }
+local hitboxConn = nil
+
+local _infectionSize = Vector3.new(8.800000190734863, 5.5, 6.599999904632568)
+local _entangleSize  = Vector3.new(4.5, 1.75, 5)
+
+local function hitboxESPStart()
+    if hitboxConn then return end
+    local folder = svc.WS:FindFirstChild("Hitboxes") or svc.WS:WaitForChild("Hitboxes", 10)
+    if not folder then warn("[v1prware] HitboxESP: Workspace.Hitboxes not found"); return end
+    hitboxConn = folder.ChildAdded:Connect(function(child)
+        if not hitboxESP.on then return end
+        task.wait(0.05)
+        if not child or not child.Parent or not child:IsA("BasePart") then return end
+        local size = child.Size
+        local color
+        if (size - _infectionSize).Magnitude <= 0.1 then
+            color = Color3.new(1, 0, 0)     -- red: MassInfection
+        elseif (size - _entangleSize).Magnitude <= 0.1 then
+            color = Color3.new(1, 0, 1)     -- purple: Entanglement
+        else
+            return
+        end
+        local hl = Instance.new("Highlight")
+        hl.FillColor          = color
+        hl.FillTransparency   = 0.4
+        hl.OutlineColor       = color
+        hl.OutlineTransparency = 0
+        hl.DepthMode          = Enum.HighlightDepthMode.AlwaysOnTop
+        hl.Adornee            = child
+        hl.Parent             = child
+        child.AncestryChanged:Connect(function()
+            if not child.Parent then pcall(function() hl:Destroy() end) end
+        end)
+    end)
+end
+
+local function hitboxESPStop()
+    if hitboxConn then hitboxConn:Disconnect(); hitboxConn = nil end
+end
+
+secHitboxESP:Toggle({
+    Title = "Enable Hitbox ESP", Type = "Checkbox", Default = hitboxESP.on,
+    Callback = function(on)
+        hitboxESP.on = on; cfg.set("hitboxESPOn", on)
+        if on then hitboxESPStart() else hitboxESPStop() end
+    end
+})
+
+if hitboxESP.on then task.spawn(hitboxESPStart) end
+lp.CharacterAdded:Connect(function()
+    hitboxESPStop(); if hitboxESP.on then task.spawn(hitboxESPStart) end
+end)
 
 ------------------------------------------------------------------------
 ------------------------------------------------------------------------
@@ -2861,6 +2919,13 @@ do
         Title = "Unload Nova Hook", Callback = function()
             nova_enabled = false; novaUnpatch()
         end
+    })
+
+    -- Void Rush Control (moved from Killer tab)
+    local sec_029c = tabNoli:Section({ Title = "Void Rush Control", Opened = true })
+    sec_029c:Toggle({
+        Title = "Noli — Void Rush Control", Type = "Checkbox", Default = noliVoidRushOn,
+        Callback = function(on) noliVoidRushOn = on; cfg.set("noliVoidRushOn", on); if not on then noliStop() end end
     })
 end
 
