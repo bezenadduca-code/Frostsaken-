@@ -700,8 +700,9 @@ lp.CharacterAdded:Connect(function() noliStop(); noliOrigWalkSpeed = nil end)
 
 -- Killer Ability UI
 local secKillerAbilities = tabKiller:Section({ Title = "Killer Abilities", Opened = true })
-secKillerAbilities:Toggle({ Title="Sixer — Air Strafe",   Type="Checkbox", Default=sixerStrafeOn, Callback=function(on) sixerStrafeOn=on; cfg.set("sixerStrafeOn",on) end })
-secKillerAbilities:Toggle({ Title="c00lkidd — Dash Turn", Type="Checkbox", Default=coolkidWSOOn,  Callback=function(on) coolkidWSOOn=on;  cfg.set("coolkidWSOOn",on)  end })
+secKillerAbilities:Toggle({ Title="Sixer — Air Strafe",       Type="Checkbox", Default=sixerStrafeOn, Callback=function(on) sixerStrafeOn=on; cfg.set("sixerStrafeOn",on) end })
+secKillerAbilities:Toggle({ Title="c00lkidd — Dash Turn",     Type="Checkbox", Default=coolkidWSOOn,  Callback=function(on) coolkidWSOOn=on;  cfg.set("coolkidWSOOn",on)  end })
+secKillerAbilities:Toggle({ Title="Noli — Void Rush Control", Type="Checkbox", Default=noliVoidRushOn,Callback=function(on) noliVoidRushOn=on; cfg.set("noliVoidRushOn",on); if not on then noliStop() end end })
 
 ------------------------------------------------------------------------
 ------------------------------------------------------------------------
@@ -1008,8 +1009,6 @@ secMinion:Toggle({ Title="1x1x1x1 Zombies",       Desc="1x1x1x1Zombie — green 
 secMinion:Toggle({ Title="JD Digital Footprints", Desc="Black disc + red glow",               Type="Checkbox", Default=mset.puddle, Callback=function(on) mset.puddle=on; cfg.set("espPuddle",on); if on then scanPuddles() else clearTag("puddle") end end })
 secMinion:Slider({ Title="Highlight Transparency", Step=0.05, Value={Min=0,Max=1,Default=mset.transparency}, Callback=function(v) mset.transparency=v; cfg.set("espMinionTrans",v); updateTransparency() end })
 secMinion:Button({ Title="🔄 Force Rescan", Callback=function() clearTag("pizza"); clearTag("zombie"); clearTag("puddle"); task.wait(0.1); scanPizza(); scanZombie(); scanPuddles() end })
-
-
 
 ------------------------------------------------------------------------
 ------------------------------------------------------------------------
@@ -2862,13 +2861,6 @@ do
         Title = "Unload Nova Hook", Callback = function()
             nova_enabled = false; novaUnpatch()
         end
-    })
-
-    -- Void Rush Control (moved from Killer tab)
-    local sec_029c = tabNoli:Section({ Title = "Void Rush Control", Opened = true })
-    sec_029c:Toggle({
-        Title = "Noli — Void Rush Control", Type = "Checkbox", Default = noliVoidRushOn,
-        Callback = function(on) noliVoidRushOn = on; cfg.set("noliVoidRushOn", on); if not on then noliStop() end end
     })
 end
 
