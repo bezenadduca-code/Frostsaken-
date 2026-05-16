@@ -1,4 +1,22 @@
+-- V1PRWARE | maintained by mitsuki | original by v1pr/glov
+print("V1PRWARE loaded")
 
+------------------------------------------------------------------------
+-- services
+------------------------------------------------------------------------
+local svc = {
+    Players        = game:GetService("Players"),
+    Run            = game:GetService("RunService"),
+    Input          = game:GetService("UserInputService"),
+    RS             = game:GetService("ReplicatedStorage"),
+    WS             = game:GetService("Workspace"),
+    TweenService   = game:GetService("TweenService"),
+    TextChat       = game:GetService("TextChatService"),
+    Http           = game:GetService("HttpService"),
+}
+
+local lp  = svc.Players.LocalPlayer
+local gui = lp:WaitForChild("PlayerGui", 10)
 ------------------------------------------------------------------------
 -- filesystem shims
 ------------------------------------------------------------------------
