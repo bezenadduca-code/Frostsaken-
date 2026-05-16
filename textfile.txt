@@ -1,0 +1,249 @@
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "InfectionTracker_Final"
+screenGui.ResetOnSpawn = false
+screenGui.DisplayOrder = 100
+screenGui.Parent = playerGui
+
+local loader = Instance.new("TextLabel")
+loader.Size = UDim2.new(0, 250, 0, 40)
+loader.Position = UDim2.new(0.5, -125, 0.4, 0)
+loader.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+loader.TextColor3 = Color3.fromRGB(0, 255, 255)
+loader.Text = "made by fsdod1337"
+loader.Font = Enum.Font.Code
+loader.TextSize = 18
+loader.Parent = screenGui
+task.delay(3, function() if loader then loader:Destroy() end end)
+
+local openIcon = Instance.new("TextButton")
+openIcon.Size = UDim2.new(0, 45, 0, 45)
+openIcon.Position = UDim2.new(0, 20, 0.5, -50)
+openIcon.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+openIcon.TextColor3 = Color3.new(1, 1, 1)
+openIcon.Text = "👁️"
+openIcon.Font = Enum.Font.GothamBold
+openIcon.TextSize = 20
+openIcon.Parent = screenGui
+
+local menuFrame = Instance.new("Frame")
+menuFrame.Size = UDim2.new(0, 160, 0, 245)
+menuFrame.Position = UDim2.new(0, 75, 0.5, -122)
+menuFrame.BackgroundTransparency = 1
+menuFrame.Visible = true
+menuFrame.Parent = screenGui
+
+openIcon.MouseButton1Click:Connect(function()
+	menuFrame.Visible = not menuFrame.Visible
+	openIcon.BackgroundColor3 = menuFrame.Visible and Color3.fromRGB(50, 50, 50) or Color3.fromRGB(30, 30, 30)
+end)
+
+local function createMenuBtn(text, pos, color)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 0, 40)
+    btn.Position = pos
+    btn.BackgroundColor3 = color
+    btn.Text = text
+    btn.TextColor3 = Color3.new(1, 1, 1)
+    btn.Font = Enum.Font.GothamBold
+    btn.Parent = menuFrame
+    return btn
+end
+
+local toggleBtn = createMenuBtn("Infection: ON", UDim2.new(0,0,0,0), Color3.fromRGB(0, 170, 0))
+local entangleBtn = createMenuBtn("Entanglement: OFF", UDim2.new(0,0,0,45), Color3.fromRGB(170, 0, 170))
+local tripwireBtn = createMenuBtn("Tripwire ESP: ON", UDim2.new(0,0,0,90), Color3.fromRGB(200, 200, 0))
+local alertBtn = createMenuBtn("Alerts: ON", UDim2.new(0,0,0,135), Color3.fromRGB(0, 120, 255))
+local thruWallsBtn = createMenuBtn("Thru Walls: ON", UDim2.new(0,0,0,180), Color3.fromRGB(0, 170, 170))
+
+local alertLabel = Instance.new("TextLabel")
+alertLabel.Size = UDim2.new(0, 800, 0, 80)
+alertLabel.Position = UDim2.new(0.5, -400, 0.75, 0)
+alertLabel.BackgroundTransparency = 1
+alertLabel.TextStrokeTransparency = 0
+alertLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
+alertLabel.TextScaled = true
+alertLabel.Font = Enum.Font.Oswald
+alertLabel.Visible = false
+alertLabel.Parent = screenGui
+
+local isEnabled, entanglementActive, tripwireEnabled, alertsEnabled, thruWallsEnabled = true, false, true, true, true
+local infectionSize = Vector3.new(8.800000190734863, 5.5, 6.599999904632568)
+local entangleSize = Vector3.new(4.5, 1.75, 5)
+local corruptNatureSize = Vector3.new(3, 3, 3)
+local corruptEnergySize = Vector3.new(11, 5, 5)
+local novaSize = Vector3.new(3.5, 3.5, 3.5)
+local huntersFeastSize = Vector3.new(5.75, 5.75, 5.75)
+local infernalCrySize = Vector3.new(6.895591735839844, 6.895591735839844, 1.029389500617981)
+
+local massInfAnims = {["81935774508746"] = true, ["99050723653468"] = true}
+local entangleAnims = {["100592913030351"] = true, ["119181003138006"] = true}
+local corruptEnergyAnims = {["93432652624003"] = true, ["127172483138092"] = true, ["114620047310688"] = true}
+local novaAnims = {["107339108383093"] = true}
+local infernalCryAnims = {["121808371053483"] = true}
+
+local function triggerAlert(text, color)
+    if not alertsEnabled then return end
+	alertLabel.Text = text
+	alertLabel.TextColor3 = color
+	alertLabel.Visible = true
+	task.delay(2.5, function() 
+		if alertLabel.Text == text then alertLabel.Visible = false end 
+	end)
+end
+
+local function applyVisuals(child, color)
+	child.Transparency, child.Color, child.Material = 0.5, color, Enum.Material.Neon
+	
+    if thruWallsEnabled then
+        local adorn = Instance.new("BoxHandleAdornment", child)
+        adorn.Adornee = child
+        adorn.Size = child.Size
+        adorn.Color3 = color
+        adorn.Transparency = 0.5
+        adorn.AlwaysOnTop = true
+        adorn.ZIndex = 10
+    else
+        local out = Instance.new("SelectionBox", child)
+	    out.Color3 = color
+        out.Adornee = child
+    end
+end
+
+local function projectPath(character, abilityName, size, color, duration, distance)
+	local root = character:FindFirstChild("HumanoidRootPart")
+    local head = character:FindFirstChild("Head")
+	if not root then return end
+    
+	local indicator = Instance.new("Part", Workspace)
+	indicator.Anchored, indicator.CanCollide = true, false
+	indicator.Size = Vector3.new(size.X, size.Y, distance)
+	indicator.Transparency, indicator.Material, indicator.Color = 0.8, Enum.Material.Neon, color
+	
+    if thruWallsEnabled then
+        local adorn = Instance.new("BoxHandleAdornment", indicator)
+        adorn.Adornee = indicator
+        adorn.Size = indicator.Size
+        adorn.Color3 = color
+        adorn.Transparency = 0.8
+        adorn.AlwaysOnTop = true
+        adorn.ZIndex = 10
+    else
+        local selection = Instance.new("SelectionBox", indicator)
+	    selection.Adornee = indicator
+        selection.Color3 = color
+        selection.LineThickness = 0.05
+    end
+    
+    local bg = Instance.new("BillboardGui", indicator)
+    bg.Size, bg.AlwaysOnTop = UDim2.new(0, 200, 0, 50), true
+    local txt = Instance.new("TextLabel", bg)
+    txt.Size, txt.BackgroundTransparency, txt.Text = UDim2.new(1,0,1,0), 1, character.Name .. " [" .. abilityName .. "]"
+    txt.TextColor3, txt.TextStrokeTransparency, txt.TextScaled, txt.Font = color, 0, true, Enum.Font.Oswald
+
+    local isFlat = (abilityName == "Mass Infection" or abilityName == "Entanglement" or abilityName == "Corrupt Energy" or abilityName == "Corrupt Nature")
+	
+	local connection
+	connection = RunService.RenderStepped:Connect(function()
+		if not character.Parent or not root then if connection then connection:Disconnect() end indicator:Destroy() return end
+		
+        local origin = root.Position
+        local lookDir
+        
+        if isFlat then
+            lookDir = root.CFrame.LookVector
+        else
+            if character == player.Character then
+                lookDir = Workspace.CurrentCamera.CFrame.LookVector
+            else
+                lookDir = head and head.CFrame.LookVector or root.CFrame.LookVector
+            end
+        end
+        
+		indicator.CFrame = CFrame.lookAt(origin, origin + lookDir) * CFrame.new(0, 0, -distance/2)
+	end)
+	task.delay(duration, function() if connection then connection:Disconnect() end if indicator then indicator:Destroy() end end)
+end
+
+local function onCharacterAdded(char, p)
+	local hum = char:WaitForChild("Humanoid", 5)
+	if not hum then return end
+	local animator = hum:WaitForChild("Animator", 5) or hum 
+	animator.AnimationPlayed:Connect(function(track)
+		local id = tostring(track.Animation.AnimationId):match("%d+")
+		if massInfAnims[id] and isEnabled then
+			triggerAlert(p.Name .. " LAUNCHED MASS INF!", Color3.new(1,0,0))
+			projectPath(char, "Mass Infection", infectionSize, Color3.new(1,0,0), 2, 160)
+		elseif entangleAnims[id] and entanglementActive then
+			triggerAlert(p.Name .. " LAUNCHED ENTANGLE!", Color3.new(1,0,1))
+			projectPath(char, "Entanglement", entangleSize, Color3.new(1,0,1), 1, 120)
+		elseif corruptEnergyAnims[id] then
+			triggerAlert(p.Name .. ": Corrupt energy launch", Color3.fromRGB(255, 120, 0))
+			projectPath(char, "Corrupt Energy", corruptEnergySize, Color3.fromRGB(255, 120, 0), 1.5, 140)
+		elseif novaAnims[id] then
+			triggerAlert(p.Name .. " used Nova!", Color3.fromRGB(255, 215, 0))
+			projectPath(char, "Nova", novaSize, Color3.fromRGB(255, 215, 0), 1.5, 100)
+		elseif infernalCryAnims[id] then
+			triggerAlert("G666 is launching", Color3.fromRGB(255, 50, 50))
+			projectPath(char, "Infernal Cry", infernalCrySize, Color3.fromRGB(255, 50, 50), 1.5, 100)
+		end
+	end)
+end
+
+for _, p in pairs(Players:GetPlayers()) do 
+    if p.Character then onCharacterAdded(p.Character, p) end 
+    p.CharacterAdded:Connect(function(char) onCharacterAdded(char, p) end) 
+end
+Players.PlayerAdded:Connect(function(p) p.CharacterAdded:Connect(function(char) onCharacterAdded(char, p) end) end)
+
+local hitboxesFolder = Workspace:WaitForChild("Hitboxes", 10)
+if hitboxesFolder then
+	hitboxesFolder.ChildAdded:Connect(function(child)
+		task.wait(0.05)
+		if not child:IsA("BasePart") then return end
+		local size = child.Size
+		if isEnabled and (size - infectionSize).Magnitude <= 0.1 then
+			applyVisuals(child, Color3.new(1,0,0))
+		elseif entanglementActive and (size - entangleSize).Magnitude <= 0.1 then
+			applyVisuals(child, Color3.new(1,0,1))
+		elseif (size - corruptEnergySize).Magnitude <= 0.1 then
+			applyVisuals(child, Color3.fromRGB(255, 120, 0))
+		elseif (size - novaSize).Magnitude <= 0.1 then
+			applyVisuals(child, Color3.fromRGB(255, 215, 0))
+		elseif (size - infernalCrySize).Magnitude <= 0.1 then
+			applyVisuals(child, Color3.fromRGB(255, 50, 50))
+		end
+	end)
+end
+
+toggleBtn.MouseButton1Click:Connect(function() 
+    isEnabled = not isEnabled 
+    toggleBtn.Text = isEnabled and "Infection: ON" or "Infection: OFF" 
+    toggleBtn.BackgroundColor3 = isEnabled and Color3.fromRGB(0, 170, 0) or Color3.fromRGB(170, 0, 0) 
+end)
+entangleBtn.MouseButton1Click:Connect(function() 
+    entanglementActive = not entanglementActive 
+    entangleBtn.Text = entanglementActive and "Entanglement: ON" or "Entanglement: OFF" 
+    entangleBtn.BackgroundColor3 = entanglementActive and Color3.fromRGB(170, 0, 170) or Color3.fromRGB(80, 0, 80) 
+end)
+tripwireBtn.MouseButton1Click:Connect(function() 
+    tripwireEnabled = not tripwireEnabled 
+    tripwireBtn.Text = tripwireEnabled and "Tripwire ESP: ON" or "Tripwire ESP: OFF" 
+    tripwireBtn.BackgroundColor3 = tripwireEnabled and Color3.fromRGB(200, 200, 0) or Color3.fromRGB(100, 100, 0) 
+end)
+alertBtn.MouseButton1Click:Connect(function()
+    alertsEnabled = not alertsEnabled
+    alertBtn.Text = alertsEnabled and "Alerts: ON" or "Alerts: OFF"
+    alertBtn.BackgroundColor3 = alertsEnabled and Color3.fromRGB(0, 120, 255) or Color3.fromRGB(80, 80, 80)
+end)
+thruWallsBtn.MouseButton1Click:Connect(function()
+    thruWallsEnabled = not thruWallsEnabled
+    thruWallsBtn.Text = thruWallsEnabled and "Thru Walls: ON" or "Thru Walls: OFF"
+    thruWallsBtn.BackgroundColor3 = thruWallsEnabled and Color3.fromRGB(0, 170, 170) or Color3.fromRGB(80, 80, 80)
+end)
