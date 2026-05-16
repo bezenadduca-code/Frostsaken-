@@ -1575,67 +1575,116 @@ local function combatSetupSoundWatcher()
 end
 
 -- HDT (Hitbox Dragging Tech) - activates on block animation
-local combatHDTActive = false
+-- Uses improved beginDragIntoKiller logic (from FINAL_AUTO_BLOCK) with v1prware BLOCK_ANIMS IDs
 local combatHDTLastTime = 0
 local HDT_CD = 0.5
+local _combatHDTDebounce = false
 
-local function combatHDTBeginDrag(killerModel)
-    if combatHDTActive then return end
-    if not killerModel or not killerModel.Parent then return end
-    local char = lp.Character; if not char then return end
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if not hrp or not hum then return end
-    local tHRP = killerModel:FindFirstChild("HumanoidRootPart"); if not tHRP then return end
-    
-    if combatRollMiss(combatS.hdtMissChance) then return end
-    combatHDTActive = true
-    local oldW = hum.WalkSpeed; hum.WalkSpeed = 0
-    
-    -- 180 turn
-    hrp.CFrame = CFrame.lookAt(hrp.Position, hrp.Position - hrp.CFrame.LookVector)
-    
-    local bv = Instance.new("BodyVelocity")
-    bv.MaxForce = Vector3.new(1e5, 0, 1e5); bv.Velocity = Vector3.zero; bv.Parent = hrp
-    
-    local conn
-    conn = svc.Run.Heartbeat:Connect(function()
-        if not combatHDTActive then
-            conn:Disconnect(); if bv and bv.Parent then bv:Destroy() end
-            hum.WalkSpeed = oldW; return
-        end
-        if not (char and char.Parent) or not (killerModel and killerModel.Parent) then
-            combatHDTActive = false; return
-        end
-        local curTHRP = killerModel:FindFirstChild("HumanoidRootPart")
-        if not curTHRP then combatHDTActive = false; return end
-        local to = curTHRP.Position - hrp.Position
-        local h2 = Vector3.new(to.X, 0, to.Z)
-        bv.Velocity = h2.Magnitude > 0.01 and h2.Unit * combatS.hdtSpeed or Vector3.zero
-        if to.Magnitude <= 2.0 then combatHDTActive = false end
-    end)
-    
-    -- Aim at killer during drag
-    local sw = tick()
-    if hum then hum.AutoRotate = false end
-    while tick() - sw < 0.4 do
-        pcall(function()
-            local nk = combatGetNearestKiller()
-            if nk and hrp then
-                local tHRP2 = nk:FindFirstChild("HumanoidRootPart")
-                if tHRP2 then hrp.CFrame = CFrame.lookAt(hrp.Position, tHRP2.Position) end
-            end
-        end)
-        task.wait()
-    end
-    if hum then hum.AutoRotate = true end
-    
-    task.delay(0.4, function() combatHDTActive = false end)
+-- Helper to resolve the killer's root part (mirrors getKillerHRP from FINAL_AUTO_BLOCK)
+local function combatGetKillerHRP(killerModel)
+    if not killerModel then return nil end
+    local hrp = killerModel:FindFirstChild("HumanoidRootPart")
+    if hrp then return hrp end
+    if killerModel.PrimaryPart then return killerModel.PrimaryPart end
+    return killerModel:FindFirstChildWhichIsA("BasePart", true)
 end
 
+-- Improved drag: saves/restores WalkSpeed AND JumpPower, no blocking 180-flip,
+-- tracks target HRP dynamically each Heartbeat tick (mirrors beginDragIntoKiller).
+local function combatHDTBeginDrag(killerModel)
+    if _combatHDTDebounce then return end
+    if not killerModel or not killerModel.Parent then return end
+    local char = lp.Character; if not char then return end
+    local hrp  = char:FindFirstChild("HumanoidRootPart")
+    local hum  = char:FindFirstChildOfClass("Humanoid")
+    if not hrp or not hum then return end
+
+    local targetHRP = combatGetKillerHRP(killerModel)
+    if not targetHRP then return end
+
+    if combatRollMiss(combatS.hdtMissChance) then return end
+
+    _combatHDTDebounce = true
+
+    -- Save locomotion state (WalkSpeed + JumpPower so they are both restored cleanly)
+    local oldWalk         = hum.WalkSpeed
+    local oldJump         = hum.JumpPower
+    local oldPlatformStand = hum.PlatformStand
+
+    hum.WalkSpeed     = 0
+    hum.JumpPower     = 0
+    hum.PlatformStand = false  -- keep physics so BodyVelocity works
+
+    -- BodyVelocity to push the player toward the killer horizontally
+    local bv = Instance.new("BodyVelocity")
+    bv.MaxForce = Vector3.new(1e5, 0, 1e5)
+    bv.Velocity = Vector3.new(0, 0, 0)
+    bv.Parent   = hrp
+
+    local conn
+    conn = svc.Run.Heartbeat:Connect(function(dt)
+        if not _combatHDTDebounce then
+            conn:Disconnect()
+            if bv and bv.Parent then pcall(function() bv:Destroy() end) end
+            hum.WalkSpeed      = oldWalk
+            hum.JumpPower      = oldJump
+            hum.PlatformStand  = oldPlatformStand
+            return
+        end
+
+        -- abort if character or killer was removed
+        if not (char and char.Parent) or not (killerModel and killerModel.Parent) then
+            _combatHDTDebounce = false; return
+        end
+
+        -- refresh target HRP each tick (killer may respawn/teleport)
+        targetHRP = combatGetKillerHRP(killerModel)
+        if not targetHRP then _combatHDTDebounce = false; return end
+
+        local toTarget = targetHRP.Position - hrp.Position
+        local horiz    = Vector3.new(toTarget.X, 0, toTarget.Z)
+        if horiz.Magnitude > 0.01 then
+            local dir = horiz.Unit
+            bv.Velocity = Vector3.new(dir.X * combatS.hdtSpeed, bv.Velocity.Y, dir.Z * combatS.hdtSpeed)
+        else
+            bv.Velocity = Vector3.new(0, bv.Velocity.Y, 0)
+        end
+
+        -- stop when close enough
+        if toTarget.Magnitude <= 2.0 then
+            _combatHDTDebounce = false
+        end
+    end)
+
+    -- Aim at killer during drag (non-blocking, runs in its own thread)
+    task.spawn(function()
+        hum.AutoRotate = false
+        local sw = tick()
+        while tick() - sw < 0.4 do
+            pcall(function()
+                local nk = combatGetNearestKiller()
+                if nk and hrp and hrp.Parent then
+                    local tHRP2 = combatGetKillerHRP(nk)
+                    if tHRP2 then hrp.CFrame = CFrame.lookAt(hrp.Position, tHRP2.Position) end
+                end
+            end)
+            task.wait()
+        end
+        hum.AutoRotate = true
+    end)
+
+    -- Hard timeout (safety net so debounce never gets stuck)
+    task.delay(0.4, function()
+        if _combatHDTDebounce then _combatHDTDebounce = false end
+    end)
+end
+
+-- Triggered by AnimationPlayed (event-driven, not polled)
+-- Uses File 1's BLOCK_ANIMS IDs:
+--   72722244508749, 96959123077498, 95802026624883, 100926346851492, 120748030255574
 local function combatOnBlockAnim(track)
     pcall(function()
-        if not combatS.hdtEnabled or combatHDTActive then return end
+        if not combatS.hdtEnabled or _combatHDTDebounce then return end
         local now = tick(); if now - combatHDTLastTime < HDT_CD then return end
         local id = tostring(track.Animation and track.Animation.AnimationId or ""):match("%d+")
         if not id or not BLOCK_ANIMS[id] then return end
