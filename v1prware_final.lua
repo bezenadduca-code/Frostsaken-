@@ -159,6 +159,68 @@ secInterface:Toggle({
 })
 
 ------------------------------------------------------------------------
+-- Spoof Device (Settings)
+------------------------------------------------------------------------
+local secSpoof = tabSettings:Section({ Title = "Spoof Device", Opened = true })
+
+local spoof_device  = cfg.get("spoofDevice",  "PC")
+local spoof_applied = false
+
+local deviceMap = {
+    PC      = { touch = false, platform = "Windows" },
+    Mobile  = { touch = true,  platform = "IOS"     },
+    Console = { touch = false,  platform = "XBoxOne" },
+}
+
+local function applySpoof(device)
+    local info = deviceMap[device]
+    if not info then return end
+    pcall(function()
+        local uis = svc.Input
+        local mt  = getrawmetatable and getrawmetatable(uis)
+        if mt then
+            local old_index = mt.__index
+            setreadonly(mt, false)
+            mt.__index = function(self, key)
+                if key == "TouchEnabled" then return info.touch end
+                return old_index(self, key)
+            end
+            setreadonly(mt, true)
+        end
+    end)
+    pcall(function()
+        local m = require(svc.RS.Modules.Network.Network)
+        if m and m.FireServerConnection then
+            local orig = m.FireServerConnection
+            m.FireServerConnection = function(self, event, etype, data, ...)
+                if type(data) == "table" and data.Platform ~= nil then
+                    data.Platform = info.platform
+                end
+                return orig(self, event, etype, data, ...)
+            end
+        end
+    end)
+    spoof_applied = true
+    warn("[V1PRWARE] Spoof applied: " .. device)
+end
+
+local deviceOptions = { "PC", "Mobile", "Console" }
+secSpoof:Dropdown({
+    Title = "Spoof As", Values = deviceOptions, Value = spoof_device,
+    Callback = function(v)
+        spoof_device = type(v) == "table" and v[1] or v
+        cfg.set("spoofDevice", spoof_device)
+    end
+})
+secSpoof:Button({
+    Title = "Apply Spoof", Callback = function() applySpoof(spoof_device) end
+})
+secSpoof:Paragraph({
+    Title   = "Note",
+    Content = "Requires setreadonly / getrawmetatable from your executor. Apply before joining a match.",
+})
+
+------------------------------------------------------------------------
 ------------------------------------------------------------------------
 -- TAB: GLOBAL
 ------------------------------------------------------------------------
@@ -700,9 +762,161 @@ lp.CharacterAdded:Connect(function() noliStop(); noliOrigWalkSpeed = nil end)
 
 -- Killer Ability UI
 local secKillerAbilities = tabKiller:Section({ Title = "Killer Abilities", Opened = true })
-secKillerAbilities:Toggle({ Title="Sixer — Air Strafe",       Type="Checkbox", Default=sixerStrafeOn, Callback=function(on) sixerStrafeOn=on; cfg.set("sixerStrafeOn",on) end })
-secKillerAbilities:Toggle({ Title="c00lkidd — Dash Turn",     Type="Checkbox", Default=coolkidWSOOn,  Callback=function(on) coolkidWSOOn=on;  cfg.set("coolkidWSOOn",on)  end })
-secKillerAbilities:Toggle({ Title="Noli — Void Rush Control", Type="Checkbox", Default=noliVoidRushOn,Callback=function(on) noliVoidRushOn=on; cfg.set("noliVoidRushOn",on); if not on then noliStop() end end })
+secKillerAbilities:Toggle({ Title="Sixer — Air Strafe",   Type="Checkbox", Default=sixerStrafeOn, Callback=function(on) sixerStrafeOn=on; cfg.set("sixerStrafeOn",on) end })
+secKillerAbilities:Toggle({ Title="c00lkidd — Dash Turn", Type="Checkbox", Default=coolkidWSOOn,  Callback=function(on) coolkidWSOOn=on;  cfg.set("coolkidWSOOn",on)  end })
+
+------------------------------------------------------------------------
+-- KILLER AI PATHFIND
+------------------------------------------------------------------------
+local secKillerAI = tabKiller:Section({ Title = "Killer AI PathFind", Opened = true })
+
+local killerAI = {
+    on           = cfg.get("killerAIOn",       false),
+    avoidDist    = cfg.get("killerAIAvoid",    30),
+    drawPaths    = cfg.get("killerAIDrawPaths", false),
+    thread       = nil,
+    pathFolder   = nil,
+    pathParts    = {},
+}
+
+local PFS = game:GetService("PathfindingService")
+
+local function killerAIGetNearest()
+    local char = lp.Character; if not char then return nil end
+    local myHRP = char:FindFirstChild("HumanoidRootPart"); if not myHRP then return nil end
+    local kf = svc.WS:FindFirstChild("Players") and svc.WS.Players:FindFirstChild("Killers")
+    if not kf then return nil end
+    local best, bestD = nil, math.huge
+    for _, k in ipairs(kf:GetChildren()) do
+        local hrp = k:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            local d = (hrp.Position - myHRP.Position).Magnitude
+            if d < bestD then bestD = d; best = hrp end
+        end
+    end
+    return best
+end
+
+local function killerAIClearPaths()
+    for _, p in ipairs(killerAI.pathParts) do pcall(function() p:Destroy() end) end
+    killerAI.pathParts = {}
+    if killerAI.pathFolder then pcall(function() killerAI.pathFolder:Destroy() end); killerAI.pathFolder = nil end
+end
+
+local function killerAIDrawPath(waypoints)
+    killerAIClearPaths()
+    if not killerAI.drawPaths then return end
+    killerAI.pathFolder = Instance.new("Folder"); killerAI.pathFolder.Name = "KillerAIPath"; killerAI.pathFolder.Parent = svc.WS
+    for i, wp in ipairs(waypoints) do
+        local p = Instance.new("Part")
+        p.Name = "AIWaypoint"..i; p.Size = Vector3.new(0.4,0.4,0.4)
+        p.Position = wp.Position; p.Anchored = true; p.CanCollide = false
+        p.Material = Enum.Material.Neon; p.Shape = Enum.PartType.Ball
+        p.Color = Color3.fromRGB(255, 50, 50); p.Transparency = 0.2
+        p.Parent = killerAI.pathFolder
+        table.insert(killerAI.pathParts, p)
+    end
+end
+
+local function killerAIRun()
+    if killerAI.thread then task.cancel(killerAI.thread) end
+    killerAI.thread = task.spawn(function()
+        while killerAI.on do
+            local char = lp.Character
+            local hum  = char and char:FindFirstChildOfClass("Humanoid")
+            local myHRP = char and char:FindFirstChild("HumanoidRootPart")
+            if not hum or not myHRP then task.wait(0.5); continue end
+
+            -- killer avoidance: flee if killer too close
+            local killerHRP = killerAIGetNearest()
+            if killerHRP then
+                local dist = (killerHRP.Position - myHRP.Position).Magnitude
+                if dist < killerAI.avoidDist then
+                    -- pathfind away from killer
+                    local awayDir = (myHRP.Position - killerHRP.Position)
+                    local awayPos = myHRP.Position + (awayDir.Magnitude > 0 and awayDir.Unit * 40 or Vector3.new(math.random(-20,20),0,math.random(-20,20)))
+                    local path = PFS:CreatePath({ AgentRadius=2, AgentHeight=5, AgentCanJump=true })
+                    local ok = pcall(function() path:ComputeAsync(myHRP.Position, awayPos) end)
+                    if ok and path.Status == Enum.PathStatus.Success then
+                        local wps = path:GetWaypoints()
+                        killerAIDrawPath(wps)
+                        for _, wp in ipairs(wps) do
+                            if not killerAI.on then break end
+                            if wp.Action == Enum.PathWaypointAction.Jump then hum.Jump = true end
+                            hum:MoveTo(wp.Position)
+                            local reached = hum.MoveToFinished:Wait()
+                            -- re-check killer proximity each waypoint
+                            if killerAIGetNearest() then
+                                local nd = (killerAIGetNearest().Position - myHRP.Position).Magnitude
+                                if nd < killerAI.avoidDist * 0.6 then break end
+                            end
+                        end
+                    end
+                    task.wait(0.3)
+                    continue
+                end
+            end
+
+            -- default: pathfind toward nearest generator
+            local map = getMapContent()
+            local bestGen, bestGenDist = nil, math.huge
+            if map then
+                for _, obj in ipairs(map:GetChildren()) do
+                    if obj.Name == "Generator" then
+                        local base = obj:FindFirstChild("Base") or obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+                        if base then
+                            local d = (base.Position - myHRP.Position).Magnitude
+                            if d < bestGenDist then bestGenDist = d; bestGen = base end
+                        end
+                    end
+                end
+            end
+
+            if bestGen then
+                local path = PFS:CreatePath({ AgentRadius=2, AgentHeight=5, AgentCanJump=true })
+                local ok = pcall(function() path:ComputeAsync(myHRP.Position, bestGen.Position) end)
+                if ok and path.Status == Enum.PathStatus.Success then
+                    local wps = path:GetWaypoints()
+                    killerAIDrawPath(wps)
+                    for _, wp in ipairs(wps) do
+                        if not killerAI.on then break end
+                        if wp.Action == Enum.PathWaypointAction.Jump then hum.Jump = true end
+                        hum:MoveTo(wp.Position)
+                        hum.MoveToFinished:Wait()
+                        -- abort if killer too close
+                        local kh = killerAIGetNearest()
+                        if kh and (kh.Position - myHRP.Position).Magnitude < killerAI.avoidDist then break end
+                    end
+                end
+            end
+
+            task.wait(0.5)
+        end
+        killerAIClearPaths()
+        killerAI.thread = nil
+    end)
+end
+
+local function killerAIStop()
+    killerAI.on = false
+    if killerAI.thread then task.cancel(killerAI.thread); killerAI.thread = nil end
+    killerAIClearPaths()
+    local char = lp.Character
+    local hum  = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then pcall(function() hum:MoveTo(lp.Character.HumanoidRootPart.Position) end) end
+end
+
+lp.CharacterAdded:Connect(function()
+    killerAIClearPaths()
+    if killerAI.on then task.wait(1); killerAIRun() end
+end)
+
+secKillerAI:Toggle({ Title="Enable Killer AI PathFind", Type="Checkbox", Default=killerAI.on,
+    Callback=function(on) killerAI.on=on; cfg.set("killerAIOn",on); if on then killerAIRun() else killerAIStop() end end })
+secKillerAI:Slider({ Title="Killer Avoidance Distance", Step=5, Value={Min=10,Max=100,Default=killerAI.avoidDist},
+    Callback=function(v) killerAI.avoidDist=v; cfg.set("killerAIAvoid",v) end })
+secKillerAI:Toggle({ Title="Draw Paths", Type="Checkbox", Default=killerAI.drawPaths,
+    Callback=function(on) killerAI.drawPaths=on; cfg.set("killerAIDrawPaths",on); if not on then killerAIClearPaths() end end })
 
 ------------------------------------------------------------------------
 ------------------------------------------------------------------------
@@ -724,9 +938,9 @@ local esp = {
 
 local function espItemColor(name)
     local n = name:lower()
-    if n:find("medkit")    then return Color3.fromRGB(0,  255, 200) end
-    if n:find("bloxycola") then return Color3.fromRGB(0,  200, 255) end
-    return Color3.fromRGB(0, 230, 230)
+    if n:find("medkit")    then return Color3.fromRGB(0, 255, 255) end  -- Cyan
+    if n:find("bloxycola") then return Color3.fromRGB(0, 255, 255) end  -- Cyan
+    return Color3.fromRGB(0, 255, 255)
 end
 
 local function espItemHeld(obj)
@@ -799,11 +1013,11 @@ end
 
 local function espDoKillers(on)
     if not esp.killerFolder then return end
-    for _,k in ipairs(esp.killerFolder:GetChildren()) do if k:IsA("Model") then if on then espAttach(k,"esp_k",Color3.fromRGB(255,0,0),true) else espDetach(k,"esp_k") end end end
+    for _,k in ipairs(esp.killerFolder:GetChildren()) do if k:IsA("Model") then if on then espAttach(k,"esp_k",Color3.fromRGB(255,80,80),true) else espDetach(k,"esp_k") end end end
 end
 local function espDoSurvivors(on)
     if not esp.survivorFolder then return end
-    for _,s in ipairs(esp.survivorFolder:GetChildren()) do if s:IsA("Model") then if on then espAttach(s,"esp_s",Color3.fromRGB(255,255,0),true) else espDetach(s,"esp_s") end end end
+    for _,s in ipairs(esp.survivorFolder:GetChildren()) do if s:IsA("Model") then if on then espAttach(s,"esp_s",Color3.fromRGB(50,255,50),true) else espDetach(s,"esp_s") end end end
 end
 local function espDoGenerators(on)
     local map=getMapContent(); if not map then return end
@@ -826,11 +1040,11 @@ end
 local function espBindPlayers()
     for _,c in pairs(esp.playerConns) do if c.Connected then c:Disconnect() end end; esp.playerConns={}
     if esp.killerFolder then
-        table.insert(esp.playerConns, esp.killerFolder.ChildAdded:Connect(function(ch) task.wait(0.2); if esp.killers and ch and ch.Parent and ch:IsA("Model") then espAttach(ch,"esp_k",Color3.fromRGB(255,0,0),true) end end))
+        table.insert(esp.playerConns, esp.killerFolder.ChildAdded:Connect(function(ch) task.wait(0.2); if esp.killers and ch and ch.Parent and ch:IsA("Model") then espAttach(ch,"esp_k",Color3.fromRGB(255,80,80),true) end end))
         table.insert(esp.playerConns, esp.killerFolder.ChildRemoved:Connect(function(ch) espDetach(ch,"esp_k") end))
     end
     if esp.survivorFolder then
-        table.insert(esp.playerConns, esp.survivorFolder.ChildAdded:Connect(function(ch) task.wait(0.2); if esp.survivors and ch and ch.Parent and ch:IsA("Model") then espAttach(ch,"esp_s",Color3.fromRGB(255,255,0),true) end end))
+        table.insert(esp.playerConns, esp.survivorFolder.ChildAdded:Connect(function(ch) task.wait(0.2); if esp.survivors and ch and ch.Parent and ch:IsA("Model") then espAttach(ch,"esp_s",Color3.fromRGB(50,255,50),true) end end))
         table.insert(esp.playerConns, esp.survivorFolder.ChildRemoved:Connect(function(ch) espDetach(ch,"esp_s") end))
     end
 end
@@ -1087,10 +1301,10 @@ secLMS:Button({ Title="■  Stop",        Callback=function() musicReset() end }
 secLMS:Button({ Title="↓  Preload LMS", Callback=function() for name in pairs(musicTracks) do task.spawn(function()musicFetch(name)end); task.wait(0.1) end end })
 lp.CharacterAdded:Connect(function() task.wait(3); if music.on then if music.thread then task.cancel(music.thread) end; music.thread=task.spawn(musicMonitor) end end)
 
-local tabSurSen = win:Tab({ Title = "Sentinels", Icon = "shield" })
-local tabElliot  = tabSurSen
-local tabChance  = tabSurSen
-local tabTwoTime = tabSurSen
+local tabElliot  = win:Tab({ Title = "Elliot",    Icon = "pizza"     })
+local tabSurSen  = win:Tab({ Title = "Guest1337", Icon = "shield"    })
+local tabChance  = win:Tab({ Title = "Chance",    Icon = "crosshair" })
+local tabTwoTime = win:Tab({ Title = "TwoTime",   Icon = "knife"     })
 
 -- Elliot Aimbot
 do
@@ -1287,7 +1501,7 @@ end
 
 
 ------------------------------------------------------------------------
--- SENTINELS — Auto Block & Combat
+-- GUEST1337 — Auto Block & Combat
 ------------------------------------------------------------------------
 local sec_015 = tabSurSen:Section({ Title = "Auto Block & Combat", Opened = true })
 
@@ -1575,67 +1789,116 @@ local function combatSetupSoundWatcher()
 end
 
 -- HDT (Hitbox Dragging Tech) - activates on block animation
-local combatHDTActive = false
+-- Uses improved beginDragIntoKiller logic (from FINAL_AUTO_BLOCK) with v1prware BLOCK_ANIMS IDs
 local combatHDTLastTime = 0
 local HDT_CD = 0.5
+local _combatHDTDebounce = false
 
-local function combatHDTBeginDrag(killerModel)
-    if combatHDTActive then return end
-    if not killerModel or not killerModel.Parent then return end
-    local char = lp.Character; if not char then return end
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if not hrp or not hum then return end
-    local tHRP = killerModel:FindFirstChild("HumanoidRootPart"); if not tHRP then return end
-    
-    if combatRollMiss(combatS.hdtMissChance) then return end
-    combatHDTActive = true
-    local oldW = hum.WalkSpeed; hum.WalkSpeed = 0
-    
-    -- 180 turn
-    hrp.CFrame = CFrame.lookAt(hrp.Position, hrp.Position - hrp.CFrame.LookVector)
-    
-    local bv = Instance.new("BodyVelocity")
-    bv.MaxForce = Vector3.new(1e5, 0, 1e5); bv.Velocity = Vector3.zero; bv.Parent = hrp
-    
-    local conn
-    conn = svc.Run.Heartbeat:Connect(function()
-        if not combatHDTActive then
-            conn:Disconnect(); if bv and bv.Parent then bv:Destroy() end
-            hum.WalkSpeed = oldW; return
-        end
-        if not (char and char.Parent) or not (killerModel and killerModel.Parent) then
-            combatHDTActive = false; return
-        end
-        local curTHRP = killerModel:FindFirstChild("HumanoidRootPart")
-        if not curTHRP then combatHDTActive = false; return end
-        local to = curTHRP.Position - hrp.Position
-        local h2 = Vector3.new(to.X, 0, to.Z)
-        bv.Velocity = h2.Magnitude > 0.01 and h2.Unit * combatS.hdtSpeed or Vector3.zero
-        if to.Magnitude <= 2.0 then combatHDTActive = false end
-    end)
-    
-    -- Aim at killer during drag
-    local sw = tick()
-    if hum then hum.AutoRotate = false end
-    while tick() - sw < 0.4 do
-        pcall(function()
-            local nk = combatGetNearestKiller()
-            if nk and hrp then
-                local tHRP2 = nk:FindFirstChild("HumanoidRootPart")
-                if tHRP2 then hrp.CFrame = CFrame.lookAt(hrp.Position, tHRP2.Position) end
-            end
-        end)
-        task.wait()
-    end
-    if hum then hum.AutoRotate = true end
-    
-    task.delay(0.4, function() combatHDTActive = false end)
+-- Helper to resolve the killer's root part (mirrors getKillerHRP from FINAL_AUTO_BLOCK)
+local function combatGetKillerHRP(killerModel)
+    if not killerModel then return nil end
+    local hrp = killerModel:FindFirstChild("HumanoidRootPart")
+    if hrp then return hrp end
+    if killerModel.PrimaryPart then return killerModel.PrimaryPart end
+    return killerModel:FindFirstChildWhichIsA("BasePart", true)
 end
 
+-- Improved drag: saves/restores WalkSpeed AND JumpPower, no blocking 180-flip,
+-- tracks target HRP dynamically each Heartbeat tick (mirrors beginDragIntoKiller).
+local function combatHDTBeginDrag(killerModel)
+    if _combatHDTDebounce then return end
+    if not killerModel or not killerModel.Parent then return end
+    local char = lp.Character; if not char then return end
+    local hrp  = char:FindFirstChild("HumanoidRootPart")
+    local hum  = char:FindFirstChildOfClass("Humanoid")
+    if not hrp or not hum then return end
+
+    local targetHRP = combatGetKillerHRP(killerModel)
+    if not targetHRP then return end
+
+    if combatRollMiss(combatS.hdtMissChance) then return end
+
+    _combatHDTDebounce = true
+
+    -- Save locomotion state (WalkSpeed + JumpPower so they are both restored cleanly)
+    local oldWalk         = hum.WalkSpeed
+    local oldJump         = hum.JumpPower
+    local oldPlatformStand = hum.PlatformStand
+
+    hum.WalkSpeed     = 0
+    hum.JumpPower     = 0
+    hum.PlatformStand = false  -- keep physics so BodyVelocity works
+
+    -- BodyVelocity to push the player toward the killer horizontally
+    local bv = Instance.new("BodyVelocity")
+    bv.MaxForce = Vector3.new(1e5, 0, 1e5)
+    bv.Velocity = Vector3.new(0, 0, 0)
+    bv.Parent   = hrp
+
+    local conn
+    conn = svc.Run.Heartbeat:Connect(function(dt)
+        if not _combatHDTDebounce then
+            conn:Disconnect()
+            if bv and bv.Parent then pcall(function() bv:Destroy() end) end
+            hum.WalkSpeed      = oldWalk
+            hum.JumpPower      = oldJump
+            hum.PlatformStand  = oldPlatformStand
+            return
+        end
+
+        -- abort if character or killer was removed
+        if not (char and char.Parent) or not (killerModel and killerModel.Parent) then
+            _combatHDTDebounce = false; return
+        end
+
+        -- refresh target HRP each tick (killer may respawn/teleport)
+        targetHRP = combatGetKillerHRP(killerModel)
+        if not targetHRP then _combatHDTDebounce = false; return end
+
+        local toTarget = targetHRP.Position - hrp.Position
+        local horiz    = Vector3.new(toTarget.X, 0, toTarget.Z)
+        if horiz.Magnitude > 0.01 then
+            local dir = horiz.Unit
+            bv.Velocity = Vector3.new(dir.X * combatS.hdtSpeed, bv.Velocity.Y, dir.Z * combatS.hdtSpeed)
+        else
+            bv.Velocity = Vector3.new(0, bv.Velocity.Y, 0)
+        end
+
+        -- stop when close enough
+        if toTarget.Magnitude <= 2.0 then
+            _combatHDTDebounce = false
+        end
+    end)
+
+    -- Aim at killer during drag (non-blocking, runs in its own thread)
+    task.spawn(function()
+        hum.AutoRotate = false
+        local sw = tick()
+        while tick() - sw < 0.4 do
+            pcall(function()
+                local nk = combatGetNearestKiller()
+                if nk and hrp and hrp.Parent then
+                    local tHRP2 = combatGetKillerHRP(nk)
+                    if tHRP2 then hrp.CFrame = CFrame.lookAt(hrp.Position, tHRP2.Position) end
+                end
+            end)
+            task.wait()
+        end
+        hum.AutoRotate = true
+    end)
+
+    -- Hard timeout (safety net so debounce never gets stuck)
+    task.delay(0.4, function()
+        if _combatHDTDebounce then _combatHDTDebounce = false end
+    end)
+end
+
+-- Triggered by AnimationPlayed (event-driven, not polled)
+-- Uses File 1's BLOCK_ANIMS IDs:
+--   72722244508749, 96959123077498, 95802026624883, 100926346851492, 120748030255574
 local function combatOnBlockAnim(track)
     pcall(function()
-        if not combatS.hdtEnabled or combatHDTActive then return end
+        if not combatS.hdtEnabled or _combatHDTDebounce then return end
         local now = tick(); if now - combatHDTLastTime < HDT_CD then return end
         local id = tostring(track.Animation and track.Animation.AnimationId or ""):match("%d+")
         if not id or not BLOCK_ANIMS[id] then return end
@@ -1890,7 +2153,7 @@ sec_019:Slider({ Title = "Lock Max Distance", Value = {Min=5,Max=100,Default=com
 sec_019:Slider({ Title = "Prediction", Value = {Min=0,Max=15,Default=combatS.predictionVal}, Step = 0.5, Callback=function(v) combatS.predictionVal=v; cfg.set("combatPrediction",v) end 
 })
 
--- End of Sentinels Combat Section
+-- End of Guest1337 Combat Section
 
 ------------------------------------------------------------------------
 ------------------------------------------------------------------------
@@ -2340,8 +2603,8 @@ end
 -- TAB: JANE DOE
 ------------------------------------------------------------------------
 ------------------------------------------------------------------------
-local tabSpecial = win:Tab({ Title = "Special", Icon = "gem" })
-local tabJaneDoe  = tabSpecial
+local tabJaneDoe  = win:Tab({ Title = "Jane Doe",  Icon = "gem"  })
+local tabSpecial  = tabJaneDoe -- alias for any shared refs
 
 do
     local jd_Run    = svc.Run
@@ -2588,43 +2851,50 @@ do
 -- TAB: DUSEKKAR
 ------------------------------------------------------------------------
 ------------------------------------------------------------------------
-local tabDusekkar = tabSpecial
+local tabDusekkar = win:Tab({ Title = "Dusekkar", Icon = "zap" })
 
 do
     local sec_027 = tabDusekkar:Section({ Title = "PlasmaBeam Silent Aim", Opened = true })
 
     sec_027:Paragraph({
         Title   = "How it works",
-        Content = "Hooks UseActorAbility FireServer calls. When PlasmaBeam fires, silently redirects the CFrame toward the nearest killer's HumanoidRootPart using server-side CFrame injection.",
+        Content = "Dual hook system: (1) RemoteFunction GetMousePosition callback for mouse-based aiming, (2) UseActorAbility namecall hook with PlasmaBeam buffer check for direct CFrame injection.",
     })
 
-    local dusk_enabled    = cfg.get("duskEnabled",    false)
-    local dusk_prediction = cfg.get("duskPrediction", 0.12)
-    local dusk_aimOffset  = cfg.get("duskAimOffset",  0.0)
+    local plasma_enabled    = cfg.get("plasmaEnabled",    false)
+    local plasma_aimOffset  = cfg.get("plasmaAimOffset",  0.0)
+    local plasma_prediction = cfg.get("plasmaPrediction", 0.12)
+    
+    -- RemoteFunction callback vars
+    local plasma_oldCB     = nil
+    local plasma_rf        = nil
 
-    local function duskGetNearestKiller()
+    local function plasmaGetNearestKiller()
         local char = lp.Character; if not char then return nil end
         local myHRP = char:FindFirstChild("HumanoidRootPart"); if not myHRP then return nil end
-        local kf = svc.WS:FindFirstChild("Players") and svc.WS.Players:FindFirstChild("Killers")
+        local pf = svc.WS:FindFirstChild("Players")
+        local kf = pf and pf:FindFirstChild("Killers")
         if not kf then return nil end
         local best, bestDist = nil, math.huge
         for _, model in ipairs(kf:GetChildren()) do
-            local hrp = model:FindFirstChild("HumanoidRootPart")
-            local hum = model:FindFirstChildOfClass("Humanoid")
-            if hrp and hum and hum.Health > 0 then
-                local d = (hrp.Position - myHRP.Position).Magnitude
-                if d < bestDist then bestDist = d; best = model end
+            if model ~= char then
+                local hrp = model:FindFirstChild("HumanoidRootPart")
+                local hum = model:FindFirstChildOfClass("Humanoid")
+                if hrp and hum and hum.Health > 0 then
+                    local d = (hrp.Position - myHRP.Position).Magnitude
+                    if d < bestDist then bestDist = d; best = hrp end
+                end
             end
         end
         return best
     end
 
-    local dusk_motionData = {}
-    local function duskGetVelocity(hrp)
+    local plasma_motionData = {}
+    local function plasmaGetVelocity(hrp)
         local now = tick(); local pos = hrp.Position
-        local data = dusk_motionData[hrp]
+        local data = plasma_motionData[hrp]
         if not data then
-            dusk_motionData[hrp] = { lastPos = pos, lastTime = now, vel = Vector3.zero }
+            plasma_motionData[hrp] = { lastPos = pos, lastTime = now, vel = Vector3.zero }
             return Vector3.zero
         end
         local dt = now - data.lastTime
@@ -2636,98 +2906,59 @@ do
         return data.vel
     end
 
-    local dusk_remoteEvent = nil
-    local function duskGetRemote()
-        if dusk_remoteEvent and dusk_remoteEvent.Parent then return dusk_remoteEvent end
-        local ok, re = pcall(function()
-            return svc.RS.Modules.Network.Network:FindFirstChild("RemoteEvent")
-        end)
-        if ok and re then dusk_remoteEvent = re end
-        return dusk_remoteEvent
-    end
-
-    -- Hook namecall to intercept PlasmaBeam and inject aimed CFrame
-    local dusk_oldNC = nil
-    task.spawn(function()
-        local ok, re = pcall(function()
+    -- Hook: RemoteFunction GetMousePosition callback (same style as Nova)
+    local function plasmaPatchRF()
+        if plasma_rf then return end
+        local ok, rf = pcall(function()
             return svc.RS:WaitForChild("Modules", 10)
                 :WaitForChild("Network", 10)
                 :WaitForChild("Network", 10)
-                :WaitForChild("RemoteEvent", 10)
+                :WaitForChild("RemoteFunction", 10)
         end)
-        if not ok or not re then
-            warn("[V1PRWARE] Dusekkar: could not find RemoteEvent")
-            return
-        end
-        dusk_remoteEvent = re
-        dusk_oldNC = hookmetamethod(game, "__namecall", function(self, ...)
-            if not dusk_enabled then return dusk_oldNC(self, ...) end
-            local method = getnamecallmethod()
-            if method ~= "FireServer" or self ~= re then
-                return dusk_oldNC(self, ...)
-            end
-            local args = { ... }
-            local eventName = tostring(args[1])
-            if eventName ~= "UseActorAbility" then
-                return dusk_oldNC(self, ...)
-            end
-            -- Check if this is a PlasmaBeam buffer
-            local isPlasma = false
-            if args[2] and args[2][1] then
-                local ok2, bs = pcall(function() return buffer.tostring(args[2][1]) end)
-                if ok2 and bs and bs:find("PlasmaBeam") then
-                    isPlasma = true
+        if not ok or not rf then warn("[V1PRWARE] Dusekkar: RemoteFunction not found"); return end
+        plasma_rf = rf
+        plasma_oldCB = getcallbackvalue(rf, "OnClientInvoke")
+        rf.OnClientInvoke = function(reqName, data, ...)
+            if reqName == "GetMousePosition" and plasma_enabled then
+                local hrp = plasmaGetNearestKiller()
+                if hrp then
+                    local vel     = plasmaGetVelocity(hrp)
+                    local predPos = hrp.Position + vel * plasma_prediction
+                                  + Vector3.new(0, plasma_aimOffset, 0)
+                    return predPos
                 end
             end
-            if not isPlasma then return dusk_oldNC(self, ...) end
+            if plasma_oldCB then return plasma_oldCB(reqName, data, ...) end
+        end
+    end
 
-            -- Resolve target
-            local target = duskGetNearestKiller()
-            if not target then return dusk_oldNC(self, ...) end
-            local tHRP = target:FindFirstChild("HumanoidRootPart")
-            if not tHRP then return dusk_oldNC(self, ...) end
+    local function plasmaUnpatch()
+        if plasma_rf and plasma_oldCB then
+            plasma_rf.OnClientInvoke = plasma_oldCB
+        end
+        plasma_rf = nil; plasma_oldCB = nil
+    end
 
-            local char  = lp.Character
-            local myHRP = char and char:FindFirstChild("HumanoidRootPart")
-            if not myHRP then return dusk_oldNC(self, ...) end
-
-            -- Predicted position
-            local vel     = duskGetVelocity(tHRP)
-            local predPos = tHRP.Position + vel * dusk_prediction
-                          + Vector3.new(0, dusk_aimOffset, 0)
-
-            -- Build aimed CFrame and fire
-            local aimedCF = CFrame.lookAt(myHRP.Position, predPos)
-            re:FireServer("UseActorAbility", {
-                buffer.fromstring("\x03\n\x00\x00\x00PlasmaBeam")
-            }, aimedCF)
-            -- Return nothing so original call is suppressed
-            return
-        end)
-    end)
-
-    lp.CharacterAdded:Connect(function() dusk_motionData = {} end)
+    -- Start hook
+    task.spawn(plasmaPatchRF)
+    
+    lp.CharacterAdded:Connect(function() plasma_motionData = {} end)
 
     sec_027:Toggle({
-        Title = "Enable PlasmaBeam Aim", Default = dusk_enabled, Callback = function(on) dusk_enabled = on; cfg.set("duskEnabled", on) end, Type = "Checkbox"})
+        Title = "Enable PlasmaBeam Aim", Default = plasma_enabled, Type = "Checkbox",
+        Callback = function(on) plasma_enabled = on; cfg.set("plasmaEnabled", on) end })
     sec_027:Slider({
-        Title = "Prediction (s)", Value = {Min=0.0,Max=0.5,Default=dusk_prediction}, Step = 0.01,
-        Callback = function(v) dusk_prediction = v; cfg.set("duskPrediction", v) end
+        Title = "Prediction (s)", Value = {Min=0.0,Max=0.5,Default=plasma_prediction}, Step = 0.01,
+        Callback = function(v) plasma_prediction = v; cfg.set("plasmaPrediction", v) end
     })
     sec_027:Slider({
-        Title = "Aim Height Offset", Value = {Min=-3.0,Max=3.0,Default=dusk_aimOffset}, Step = 0.1,
-        Callback = function(v) dusk_aimOffset = v; cfg.set("duskAimOffset", v) end
-    })
+        Title = "Aim Height Offset", Value = {Min=-5.0, Max=5.0, Default=plasma_aimOffset}, Step = 0.1,
+        Callback = function(v) plasma_aimOffset = v; cfg.set("plasmaAimOffset", v) end })
+
     local sec_028 = tabDusekkar:Section({ Title = "Control", Opened = true })
     sec_028:Button({
-        Title = "Unload Dusekkar Hook", Callback = function()
-            dusk_enabled = false
-            if dusk_oldNC then
-                pcall(function()
-                    hookmetamethod(game, "__namecall", dusk_oldNC)
-                end)
-                dusk_oldNC = nil
-            end
+        Title = "Unload PlasmaBeam Hook", Callback = function()
+            plasma_enabled = false; plasmaUnpatch()
         end
     })
 end
@@ -2737,12 +2968,382 @@ end
 -- TAB: NOLI
 ------------------------------------------------------------------------
 ------------------------------------------------------------------------
-local tabNoli = tabSpecial
-local sec_029 = tabNoli:Section({ Title = "Noli Features", Opened = true })
-sec_029:Paragraph({
-    Title   = "Coming Soon",
-    Content = "Noli features are currently locked and will be available in a future update.",
+local tabNoli = win:Tab({ Title = "Noli", Icon = "wind" })
+
+do
+    local sec_029 = tabNoli:Section({ Title = "Nova Silent Aim", Opened = true })
+
+    sec_029:Paragraph({
+        Title   = "How it works",
+        Content = "Hooks the RemoteFunction's GetMousePosition callback. When Nova fires, the server asks the client where the mouse is — we return the nearest survivor's predicted position instead.",
+    })
+
+    local nova_enabled    = cfg.get("novaEnabled",    false)
+    local nova_aimOffset  = cfg.get("novaAimOffset",  0.0)
+    local nova_prediction = cfg.get("novaPrediction", 0.12)
+    local nova_oldCB      = nil
+    local nova_rf         = nil
+
+    local nova_motionData = {}
+    
+    local function novaGetVelocity(hrp)
+        local now = tick(); local pos = hrp.Position
+        local data = nova_motionData[hrp]
+        if not data then
+            nova_motionData[hrp] = { lastPos = pos, lastTime = now, vel = Vector3.zero }
+            return Vector3.zero
+        end
+        local dt = now - data.lastTime
+        if dt > 0 then
+            data.vel     = (pos - data.lastPos) / dt
+            data.lastPos = pos
+            data.lastTime = now
+        end
+        return data.vel
+    end
+
+    local function novaGetNearestSurvivor()
+        local char = lp.Character; if not char then return nil end
+        local myHRP = char:FindFirstChild("HumanoidRootPart"); if not myHRP then return nil end
+        local pf = svc.WS:FindFirstChild("Players")
+        local sf = pf and pf:FindFirstChild("Survivors")
+        if not sf then return nil end
+        local best, bestDist = nil, math.huge
+        for _, model in ipairs(sf:GetChildren()) do
+            if model ~= char then
+                local hrp = model:FindFirstChild("HumanoidRootPart")
+                local hum = model:FindFirstChildOfClass("Humanoid")
+                if hrp and hum and hum.Health > 0 then
+                    local d = (hrp.Position - myHRP.Position).Magnitude
+                    if d < bestDist then bestDist = d; best = hrp end
+                end
+            end
+        end
+        return best
+    end
+
+    local function novaPatch()
+        if nova_rf then return end
+        local ok, rf = pcall(function()
+            return svc.RS:WaitForChild("Modules", 10)
+                :WaitForChild("Network", 10)
+                :WaitForChild("Network", 10)
+                :WaitForChild("RemoteFunction", 10)
+        end)
+        if not ok or not rf then warn("[V1PRWARE] Noli: RemoteFunction not found"); return end
+        nova_rf = rf
+        nova_oldCB = getcallbackvalue(rf, "OnClientInvoke")
+        rf.OnClientInvoke = function(reqName, data, ...)
+            if reqName == "GetMousePosition" and nova_enabled then
+                local hrp = novaGetNearestSurvivor()
+                if hrp then
+                    -- Calculate velocity and predicted position
+                    local vel = novaGetVelocity(hrp)
+                    local predPos = hrp.Position + vel * nova_prediction
+                                  + Vector3.new(0, nova_aimOffset, 0)
+                    return predPos
+                end
+            end
+            if nova_oldCB then return nova_oldCB(reqName, data, ...) end
+        end
+    end
+
+    local function novaUnpatch()
+        if nova_rf and nova_oldCB then
+            nova_rf.OnClientInvoke = nova_oldCB
+        end
+        nova_rf = nil; nova_oldCB = nil
+    end
+
+    task.spawn(novaPatch)
+    
+    lp.CharacterAdded:Connect(function() nova_motionData = {} end)
+
+    sec_029:Toggle({
+        Title = "Enable Nova Aim", Default = nova_enabled, Type = "Checkbox",
+        Callback = function(on) nova_enabled = on; cfg.set("novaEnabled", on) end })
+    sec_029:Slider({
+        Title = "Prediction (s)", Value = {Min=0.0,Max=0.5,Default=nova_prediction}, Step = 0.01,
+        Callback = function(v) nova_prediction = v; cfg.set("novaPrediction", v) end
+    })
+    sec_029:Slider({
+        Title = "Aim Height Offset", Value = {Min=-5.0, Max=5.0, Default=nova_aimOffset}, Step = 0.1,
+        Callback = function(v) nova_aimOffset = v; cfg.set("novaAimOffset", v) end })
+
+    local sec_029b = tabNoli:Section({ Title = "Control", Opened = true })
+    sec_029b:Button({
+        Title = "Unload Nova Hook", Callback = function()
+            nova_enabled = false; novaUnpatch()
+        end
+    })
+
+    local sec_029c = tabNoli:Section({ Title = "Void Rush Control", Opened = true })
+    sec_029c:Toggle({ Title="Noli — Void Rush Control", Type="Checkbox", Default=noliVoidRushOn,
+        Callback=function(on) noliVoidRushOn=on; cfg.set("noliVoidRushOn",on); if not on then noliStop() end end })
+end
+
+------------------------------------------------------------------------
+------------------------------------------------------------------------
+-- TAB: STAFF DETECTOR
+------------------------------------------------------------------------
+------------------------------------------------------------------------
+local tabStaff = win:Tab({ Title = "Staff", Icon = "shield-alert" })
+local secStaffDet = tabStaff:Section({ Title = "Staff Detector", Opened = true })
+
+local staffRoles = {
+    "Holder", "Owners",
+    "Forsaken Programmer", "Forsaken Developer",
+    "Analytics,Forsaken PR", "Forsaken Head Moderator",
+    "Forsaken Moderator", "Forsaken Contributor",
+    "Forsaken Tester", "Forsaken Community Contributor",
+    "Member",
+}
+
+local staffState       = cfg.get("staffDetectOn",    false)
+local staffLeave       = cfg.get("staffLeave",       false)
+local staffDisableAll  = cfg.get("staffDisableAll",  false)
+local staffLeaveDelay  = cfg.get("staffLeaveDelay",  5)
+local selectedRoles    = cfg.get("selectedRoles",    {})
+local staffDetectConn  = nil
+
+-- Resolve group rank name by checking the game's badge/team data
+-- We match against the DisplayName or any team the player is in that
+-- corresponds to a staff role name.
+local function isStaffPlayer(player)
+    if player == lp then return false end
+    for _, role in ipairs(selectedRoles) do
+        -- match DisplayName or Name containing the role keyword
+        local dn = player.DisplayName or ""
+        local name = player.Name or ""
+        if string.find(string.lower(dn),   string.lower(role), 1, true) or
+           string.find(string.lower(name),  string.lower(role), 1, true) then
+            return true, role
+        end
+        -- also check teams in workspace
+        local teamFolder = svc.WS:FindFirstChild("Players")
+        if teamFolder then
+            for _, teamChild in ipairs(teamFolder:GetChildren()) do
+                if string.find(string.lower(teamChild.Name), string.lower(role), 1, true) then
+                    local found = teamChild:FindFirstChild(player.Name)
+                    if found then return true, role end
+                end
+            end
+        end
+    end
+    return false
+end
+
+local function onStaffFound(player, role)
+    warn("[V1PRWARE] Staff detected: " .. player.Name .. " (" .. tostring(role) .. ")")
+    if staffLeave then
+        task.delay(staffLeaveDelay, function()
+            pcall(function() svc.Players.LocalPlayer:Kick("Staff detected – auto-leave") end)
+        end)
+    end
+end
+
+local function startStaffScan()
+    if staffDetectConn then return end
+    staffDetectConn = svc.Run.Heartbeat:Connect(function()
+        if not staffState then return end
+        for _, p in ipairs(svc.Players:GetPlayers()) do
+            local found, role = isStaffPlayer(p)
+            if found then
+                onStaffFound(p, role)
+            end
+        end
+    end)
+end
+local function stopStaffScan()
+    if staffDetectConn then staffDetectConn:Disconnect(); staffDetectConn = nil end
+end
+
+secStaffDet:Toggle({
+    Title = "Enable Staff Detection", Type = "Checkbox", Default = staffState,
+    Callback = function(on)
+        staffState = on; cfg.set("staffDetectOn", on)
+        if on then startStaffScan() else stopStaffScan() end
+    end
 })
+
+secStaffDet:Toggle({
+    Title = "Auto-Leave if Staff Found", Type = "Checkbox", Default = staffLeave,
+    Callback = function(on) staffLeave = on; cfg.set("staffLeave", on) end
+})
+
+secStaffDet:Slider({
+    Title = "Leave Delay (s)", Value = { Min = 0, Max = 60, Default = staffLeaveDelay }, Step = 1,
+    Callback = function(v) staffLeaveDelay = v; cfg.set("staffLeaveDelay", v) end
+})
+
+secStaffDet:Toggle({
+    Title = "Disable All Functions if Staff Found", Type = "Checkbox", Default = staffDisableAll,
+    Callback = function(on) staffDisableAll = on; cfg.set("staffDisableAll", on) end
+})
+
+local secStaffRoles = tabStaff:Section({ Title = "Monitored Roles", Opened = true })
+secStaffRoles:Paragraph({
+    Title   = "How it works",
+    Content = "Select which roles to watch. Detection checks player names / display names and team folders against your selection.",
+})
+for _, role in ipairs(staffRoles) do
+    local active = false
+    for _, r in ipairs(selectedRoles) do if r == role then active = true end end
+    secStaffRoles:Toggle({
+        Title = role, Type = "Checkbox", Default = active,
+        Callback = function(on)
+            -- rebuild selectedRoles
+            local newRoles = {}
+            for _, r in ipairs(selectedRoles) do
+                if r ~= role then newRoles[#newRoles+1] = r end
+            end
+            if on then newRoles[#newRoles+1] = role end
+            selectedRoles = newRoles
+            cfg.set("selectedRoles", selectedRoles)
+        end
+    })
+end
+
+------------------------------------------------------------------------
+------------------------------------------------------------------------
+-- TAB: AI PLAY (Killer-side)
+------------------------------------------------------------------------
+------------------------------------------------------------------------
+local tabAI = win:Tab({ Title = "AI Play", Icon = "bot" })
+
+do
+    local secAIMain = tabAI:Section({ Title = "Killer AI Farm", Opened = true })
+
+    secAIMain:Paragraph({
+        Title   = "What this does",
+        Content = "Pathfinds to the nearest survivor and teleports onto them. Uses PathfindingService to navigate around the map. Killer-only — switch to killer before enabling.",
+    })
+
+    local ai_enabled      = cfg.get("aiKillerEnabled",  false)
+    local ai_dist         = cfg.get("aiKillerDist",     30)
+    local ai_resetOnDeath = cfg.get("aiResetOnDeath",   true)
+    local ai_thread       = nil
+    local PathfindingService = game:GetService("PathfindingService")
+
+    local function getKillerTeamFolder()
+        local wsp = svc.WS:FindFirstChild("Players")
+        return wsp and wsp:FindFirstChild("Killers")
+    end
+
+    local function getNearestSurvivor()
+        local char = lp.Character; if not char then return nil end
+        local hrp  = char:FindFirstChild("HumanoidRootPart"); if not hrp then return nil end
+        local pf   = svc.WS:FindFirstChild("Players")
+        local sf   = pf and pf:FindFirstChild("Survivors")
+        if not sf then return nil end
+        local best, bd = nil, math.huge
+        for _, model in ipairs(sf:GetChildren()) do
+            local shrp = model:FindFirstChild("HumanoidRootPart")
+            local hum  = model:FindFirstChildOfClass("Humanoid")
+            if shrp and hum and hum.Health > 0 then
+                local d = (shrp.Position - hrp.Position).Magnitude
+                if d < bd then bd = d; best = shrp end
+            end
+        end
+        return best
+    end
+
+    local function getClosestGenerator()
+        local char = lp.Character; if not char then return nil end
+        local hrp  = char:FindFirstChild("HumanoidRootPart"); if not hrp then return nil end
+        local ig   = getIngame(); if not ig then return nil end
+        local mapC = ig:FindFirstChild("Map"); if not mapC then return nil end
+        local best, bd = nil, math.huge
+        for _, v in ipairs(mapC:GetChildren()) do
+            if v.Name == "Generator" then
+                local pp = v:FindFirstChild("HumanoidRootPart") or v.PrimaryPart or v:FindFirstChildOfClass("BasePart")
+                if pp then
+                    local d = (pp.Position - hrp.Position).Magnitude
+                    if d < bd then bd = d; best = pp end
+                end
+            end
+        end
+        return best
+    end
+
+    local function aiKillerLoop()
+        while ai_enabled do
+            task.wait(0.15)
+            local char = lp.Character; if not char then task.wait(1); continue end
+            local hrp  = char:FindFirstChild("HumanoidRootPart"); if not hrp then continue end
+            local hum  = char:FindFirstChildOfClass("Humanoid"); if not hum or hum.Health <= 0 then
+                if ai_resetOnDeath then pcall(function() hum:ChangeState(Enum.HumanoidStateType.Dead) end) end
+                task.wait(3); continue
+            end
+
+            local targetHRP = getNearestSurvivor()
+            if targetHRP then
+                local dist = (targetHRP.Position - hrp.Position).Magnitude
+                if dist <= ai_dist then
+                    -- Close enough — teleport on top
+                    hrp.CFrame = CFrame.new(targetHRP.Position + Vector3.new(0, 2, 0))
+                else
+                    -- Pathfind toward target
+                    local path = PathfindingService:CreatePath({
+                        AgentRadius = 2, AgentHeight = 5,
+                        AgentCanJump = true, AgentJumpHeight = 7.2,
+                    })
+                    local ok = pcall(function() path:ComputeAsync(hrp.Position, targetHRP.Position) end)
+                    if ok and path.Status == Enum.PathStatus.Success then
+                        for _, wp in ipairs(path:GetWaypoints()) do
+                            if not ai_enabled then break end
+                            if wp.Action == Enum.PathWaypointAction.Jump then hum.Jump = true end
+                            hum:MoveTo(wp.Position)
+                            local reached = hum.MoveToFinished:Wait()
+                            if not reached then break end
+                        end
+                    else
+                        -- Fallback: direct move
+                        hum:MoveTo(targetHRP.Position)
+                        task.wait(0.5)
+                    end
+                end
+            end
+        end
+    end
+
+    secAIMain:Toggle({
+        Title = "Enable Killer AI Farm", Type = "Checkbox", Default = ai_enabled,
+        Callback = function(on)
+            ai_enabled = on; cfg.set("aiKillerEnabled", on)
+            if on then
+                if ai_thread then task.cancel(ai_thread) end
+                ai_thread = task.spawn(aiKillerLoop)
+            else
+                if ai_thread then task.cancel(ai_thread); ai_thread = nil end
+                local char = lp.Character
+                if char then
+                    local hum = char:FindFirstChildOfClass("Humanoid")
+                    if hum then hum:MoveTo(char.HumanoidRootPart.Position) end
+                end
+            end
+        end
+    })
+
+    secAIMain:Slider({
+        Title = "Teleport-On Distance (studs)", Value = { Min = 5, Max = 60, Default = ai_dist }, Step = 1,
+        Callback = function(v) ai_dist = v; cfg.set("aiKillerDist", v) end
+    })
+
+    secAIMain:Toggle({
+        Title = "Auto Reset on Death", Type = "Checkbox", Default = ai_resetOnDeath,
+        Callback = function(on) ai_resetOnDeath = on; cfg.set("aiResetOnDeath", on) end
+    })
+
+    local secAICtrl = tabAI:Section({ Title = "Control", Opened = true })
+    secAICtrl:Button({
+        Title = "Stop AI", Callback = function()
+            ai_enabled = false
+            if ai_thread then task.cancel(ai_thread); ai_thread = nil end
+        end
+    })
+end
+
 
 ------------------------------------------------------------------------
 -- Interface Tab
