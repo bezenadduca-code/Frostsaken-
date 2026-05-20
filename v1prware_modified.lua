@@ -1,5 +1,5 @@
--- V1PRWARE | maintained by mitsuki | original by v1pr/glov
-print("V1PRWARE loaded")
+-- SAKIWARE | maintained by mitsuki | original by v1pr/glov
+print("SAKIWARE loaded")
 
 ------------------------------------------------------------------------
 -- services
@@ -30,38 +30,7 @@ local fs = {
     asset     = getcustomasset or function(p) return p end,
 }
 
-------------------------------------------------------------------------
--- config
-------------------------------------------------------------------------
-local cfg = {}
-do
-    local DIR  = "V1PRWARE"
-    local FILE = DIR .. "/config.json"
-    local function prep()
-        if not fs.hasFolder(DIR) then fs.makeFolder(DIR) end
-    end
-    function cfg.load()
-        prep()
-        if not fs.hasFile(FILE) then return end
-        local ok, t = pcall(svc.Http.JSONDecode, svc.Http, fs.read(FILE))
-        if ok and type(t) == "table" then cfg._data = t end
-    end
-    function cfg.save()
-        prep()
-        local ok, s = pcall(svc.Http.JSONEncode, svc.Http, cfg._data)
-        if ok then fs.write(FILE, s) end
-    end
-    function cfg.get(k, default)
-        local v = cfg._data[k]
-        return v ~= nil and v or default
-    end
-    function cfg.set(k, v)
-        cfg._data[k] = v
-        cfg.save()
-    end
-    cfg._data = {}
-    cfg.load()
-end
+
 
 ------------------------------------------------------------------------
 -- WindUI
@@ -71,10 +40,10 @@ local ui = loadstring(game:HttpGet(
 ))()
 
 local win = ui:CreateWindow({
-    Title          = "V1PRWARE",
+    Title          = "SAKIWARE",
     Icon           = "sparkles",
-    Author         = "V1PR / Glovsaken",
-    Folder         = "V1PRWARE",
+    Author         = "mitsuki",
+    Folder         = "SAKIWARE",
     Size           = UDim2.fromOffset(350, 300),
     Transparent    = false,
     Theme          = "Dark",
@@ -84,11 +53,14 @@ local win = ui:CreateWindow({
     ScrollBarEnabled = false,
 })
 
+local ConfigManager = win.ConfigManager
+local sakiConfig = ConfigManager:CreateConfig("sakiware")
+
 win:SetToggleKey(Enum.KeyCode.L)
 ui:SetFont("rbxasset://fonts/families/AccanthisADFStd.json")
 
 win:EditOpenButton({
-    Title          = "V1PRWARE",
+    Title          = "SAKIWARE",
     Icon           = "sparkles",
     CornerRadius   = UDim.new(0, 16),
     StrokeThickness = 0,
@@ -133,7 +105,7 @@ end
 local tabSettings = win:Tab({ Title = "Settings", Icon = "settings" })
 local secInterface = tabSettings:Section({ Title = "Interface", Opened = true })
 
-local chatForceEnabled = cfg.get("chatForceEnabled", false)
+local chatForceEnabled = false
 local chatForceConn    = nil
 local function enforceChatOn()
     if not chatForceEnabled then return end
@@ -143,9 +115,9 @@ local function enforceChatOn()
     if ci and not ci.Enabled then ci.Enabled = true end
 end
 secInterface:Toggle({
-    Title = "Show Chat Logs", Type = "Checkbox", Default = chatForceEnabled,
+    Title = "Show Chat Logs", Type = "Checkbox", Flag = "chatForceEnabled", Default = chatForceEnabled,
     Callback = function(on)
-        chatForceEnabled = on; cfg.set("chatForceEnabled", on)
+        chatForceEnabled = on
         if chatForceConn then chatForceConn:Disconnect(); chatForceConn = nil end
         if on then
             enforceChatOn()
@@ -167,12 +139,12 @@ local tabGlobal  = win:Tab({ Title = "Global", Icon = "globe" })
 local secStamina = tabGlobal:Section({ Title = "Stamina", Opened = true })
 
 local stam = {
-    on      = cfg.get("stamOn",      false),
-    loss    = cfg.get("stamLoss",    10),
-    gain    = cfg.get("stamGain",    20),
-    max     = cfg.get("stamMax",     100),
-    current = cfg.get("stamCurrent", 100),
-    noLoss  = cfg.get("stamNoLoss",  false),
+    on      = false,
+    loss    = 10,
+    gain    = 20,
+    max     = 100,
+    current = 100,
+    noLoss  = false,
     thread  = nil,
 }
 
@@ -213,15 +185,15 @@ local function stamStop()
     stam.on = false
     if stam.thread then task.cancel(stam.thread); stam.thread = nil end
 end
-secStamina:Toggle({ Title = "Custom Stamina", Type = "Checkbox", Default = stam.on,
-    Callback = function(on) stam.on = on; cfg.set("stamOn", on); if on then stamStart() else stamStop() end end })
-secStamina:Slider({ Title = "Loss Rate",     Step = 1, Value = { Min = 0,  Max = 50,  Default = stam.loss    }, Callback = function(v) stam.loss    = v; cfg.set("stamLoss",    v) end })
-secStamina:Slider({ Title = "Gain Rate",     Step = 1, Value = { Min = 0,  Max = 50,  Default = stam.gain    }, Callback = function(v) stam.gain    = v; cfg.set("stamGain",    v) end })
-secStamina:Slider({ Title = "Max Pool",      Step = 1, Value = { Min = 50, Max = 500, Default = stam.max     }, Callback = function(v) stam.max     = v; cfg.set("stamMax",     v) end })
-secStamina:Slider({ Title = "Current Value", Step = 1, Value = { Min = 0,  Max = 500, Default = stam.current }, Callback = function(v) stam.current = v; cfg.set("stamCurrent", v) end })
-secStamina:Toggle({ Title = "Infinite Stamina", Type = "Checkbox", Default = stam.noLoss,
+secStamina:Toggle({ Title = "Custom Stamina", Type = "Checkbox", Flag = "stamOn", Default = stam.on,
+    Callback = function(on) stam.on = on; if on then stamStart() else stamStop() end end })
+secStamina:Slider({ Title = "Loss Rate",     Flag = "stamLoss",    Step = 1, Value = { Min = 0,  Max = 50,  Default = stam.loss    }, Callback = function(v) stam.loss    = v end })
+secStamina:Slider({ Title = "Gain Rate",     Flag = "stamGain",    Step = 1, Value = { Min = 0,  Max = 50,  Default = stam.gain    }, Callback = function(v) stam.gain    = v end })
+secStamina:Slider({ Title = "Max Pool",      Flag = "stamMax",     Step = 1, Value = { Min = 50, Max = 500, Default = stam.max     }, Callback = function(v) stam.max     = v end })
+secStamina:Slider({ Title = "Current Value", Flag = "stamCurrent", Step = 1, Value = { Min = 0,  Max = 500, Default = stam.current }, Callback = function(v) stam.current = v end })
+secStamina:Toggle({ Title = "Infinite Stamina", Type = "Checkbox", Flag = "stamNoLoss", Default = stam.noLoss,
     Callback = function(on)
-        stam.noLoss = on; cfg.set("stamNoLoss", on); stamApply()
+        stam.noLoss = on; stamApply()
         if on and not stam.on then stam.on = true; stamStart() end
     end
 })
@@ -319,7 +291,7 @@ end
 -- Speed Hack
 ------------------------------------------------------------------------
 local secSpeed = tabGlobal:Section({ Title = "Speed Hack", Opened = true })
-local speedHack = { on=cfg.get("speedOn",false), speed=cfg.get("speedValue",30), thread=nil, lastApplied=0 }
+local speedHack = { on=false, speed=30, thread=nil, lastApplied=0 }
 local function speedModule()
     local ok, m = pcall(function() return require(svc.RS.Systems.Character.Game.Sprinting) end)
     return ok and m or nil
@@ -351,10 +323,10 @@ lp.CharacterAdded:Connect(function()
     task.delay(1, function() speedHack.lastApplied=0; if speedHack.on then speedApply(); if not speedHack.thread then speedStart() end end end)
 end)
 if speedHack.on then speedStart() end
-secSpeed:Toggle({ Title="Custom Sprint Speed", Type="Checkbox", Default=speedHack.on,
-    Callback=function(on) speedHack.on=on; cfg.set("speedOn",on); speedHack.lastApplied=0; if on then speedStart() else speedStop() end end })
-secSpeed:Input({ Title="Sprint Speed Value", CurrentValue=tostring(speedHack.speed), Placeholder="e.g. 30",
-    Callback=function(t) local n=tonumber(t); if n and n>0 and n<=200 then speedHack.speed=n; cfg.set("speedValue",n); speedHack.lastApplied=0 end end })
+secSpeed:Toggle({ Title="Custom Sprint Speed", Type="Checkbox", Flag="speedOn", Default=speedHack.on,
+    Callback=function(on) speedHack.on=on; speedHack.lastApplied=0; if on then speedStart() else speedStop() end end })
+secSpeed:Input({ Title="Sprint Speed Value", Flag="speedValue", CurrentValue=tostring(speedHack.speed), Placeholder="e.g. 30",
+    Callback=function(t) local n=tonumber(t); if n and n>0 and n<=200 then speedHack.speed=n; speedHack.lastApplied=0 end end })
 secSpeed:Button({ Title="Reset to Default", Callback=function() speedStop() end })
 
 ------------------------------------------------------------------------
@@ -365,7 +337,7 @@ secSpeed:Button({ Title="Reset to Default", Callback=function() speedStop() end 
 local tabGen     = win:Tab({ Title = "Generator", Icon = "circuit-board" })
 local secGenAuto = tabGen:Section({ Title = "Auto Solve", Opened = true })
 
-local flow = { on = cfg.get("flowOn", false), nodeDelay = cfg.get("flowNodeDelay", 0.04), lineDelay = cfg.get("flowLineDelay", 0.60) }
+local flow = { on = false, nodeDelay = 0.04, lineDelay = 0.60 }
 local function flowKey(n) return n.row.."-"..n.col end
 local function flowNeighbour(r1,c1,r2,c2)
     if r2==r1-1 and c2==c1 then return"up" end; if r2==r1+1 and c2==c1 then return"down" end
@@ -464,16 +436,16 @@ do
                 return p
             end
         else
-            warn("[v1prware] FlowGame: failed to require FlowGame module — auto-solve disabled")
+            warn("[sakiware] FlowGame: failed to require FlowGame module — auto-solve disabled")
         end
     else
-        warn("[v1prware] FlowGame: Modules.Minigames.FlowGameManager.FlowGame not found — auto-solve disabled")
+        warn("[sakiware] FlowGame: Modules.Minigames.FlowGameManager.FlowGame not found — auto-solve disabled")
     end
 end
 
-secGenAuto:Toggle({ Title = "Auto Solve", Type = "Checkbox", Default = flow.on, Callback = function(on) flow.on = on; cfg.set("flowOn", on) end })
-secGenAuto:Slider({ Title = "Node Speed", Step = 0.02, Value = { Min = 0.01, Max = 0.50, Default = flow.nodeDelay }, Callback = function(v) flow.nodeDelay = v; cfg.set("flowNodeDelay", v) end })
-secGenAuto:Slider({ Title = "Line Pause", Step = 0.10, Value = { Min = 0.00, Max = 1.00, Default = flow.lineDelay }, Callback = function(v) flow.lineDelay = v; cfg.set("flowLineDelay", v) end })
+secGenAuto:Toggle({ Title = "Auto Solve", Type = "Checkbox", Flag = "flowOn", Default = flow.on, Callback = function(on) flow.on = on end })
+secGenAuto:Slider({ Title = "Node Speed", Flag = "flowNodeDelay", Step = 0.02, Value = { Min = 0.01, Max = 0.50, Default = flow.nodeDelay }, Callback = function(v) flow.nodeDelay = v end })
+secGenAuto:Slider({ Title = "Line Pause", Flag = "flowLineDelay", Step = 0.10, Value = { Min = 0.00, Max = 1.00, Default = flow.lineDelay }, Callback = function(v) flow.lineDelay = v end })
 
 ------------------------------------------------------------------------
 ------------------------------------------------------------------------
@@ -484,21 +456,39 @@ local tabKiller = win:Tab({ Title = "Killer", Icon = "crosshair" })
 local secAimbot = tabKiller:Section({ Title = "Aimbot", Opened = true })
 
 local aim = {
-    on=cfg.get("aimOn",false), cooldown=cfg.get("aimCooldown",0.3), lockTime=cfg.get("aimLockTime",0.4),
-    maxDist=cfg.get("aimMaxDist",30), smooth=cfg.get("aimSmooth",0.35),
+    on=false, cooldown=0.3, lockTime=0.4,
+    maxDist=30, smooth=0.35,
     targeting=false, target=nil, deathConn=nil, autoRotate=nil, lastFired=0,
-    hum=nil, hrp=nil, cache={}, cacheTime=0, cacheLife=0.5,
+    hum=nil, hrp=nil, cache={},
 }
 local function aimAmIKiller() local ch=lp.Character; if not ch then return false end; local kf=getTeamFolder("Killers"); return kf and ch:IsDescendantOf(kf) end
 local function aimRefreshChar(ch) aim.hum=ch:FindFirstChildOfClass("Humanoid"); aim.hrp=ch:FindFirstChild("HumanoidRootPart") end
 local function aimRefreshTargets()
-    local now=tick(); if now-aim.cacheTime<aim.cacheLife then return end; aim.cacheTime=now; aim.cache={}
+    aim.cache = {}
     local sf=getTeamFolder("Survivors"); if not sf then return end
-    for _,model in ipairs(sf:GetChildren()) do if model~=lp.Character and model:IsA("Model") then local h=model:FindFirstChildOfClass("Humanoid"); local r=model:FindFirstChild("HumanoidRootPart"); if h and r and h.Health>0 then table.insert(aim.cache,r) end end end
+    for _,model in ipairs(sf:GetChildren()) do
+        if model~=lp.Character and model:IsA("Model") then
+            local h=model:FindFirstChildOfClass("Humanoid")
+            local r=model:FindFirstChild("HumanoidRootPart")
+            if h and r and h.Health>0 and r:IsDescendantOf(workspace) then
+                table.insert(aim.cache, { model=model, humanoid=h, root=r })
+            end
+        end
+    end
 end
 local function aimNearest()
     aimRefreshTargets(); if not aim.hrp or #aim.cache==0 then return nil end
-    local best,bd=nil,math.huge; for _,r in ipairs(aim.cache) do local d=(r.Position-aim.hrp.Position).Magnitude; if d<bd and d<=aim.maxDist then bd=d; best=r end end; return best
+    local best,bd=nil,math.huge
+    for _,t in ipairs(aim.cache) do
+        if t.humanoid.Health>0 and t.root and t.root.Parent then
+            -- predict position using velocity so fast survivors don't escape
+            local vel = t.root.AssemblyLinearVelocity or Vector3.zero
+            local predictedPos = t.root.Position + vel * 0.1
+            local d=(predictedPos-aim.hrp.Position).Magnitude
+            if d<bd and d<=aim.maxDist then bd=d; best=t end
+        end
+    end
+    return best
 end
 local function aimUnlock()
     if not aim.targeting then return end
@@ -506,18 +496,24 @@ local function aimUnlock()
     if aim.autoRotate~=nil and aim.hum then aim.hum.AutoRotate=aim.autoRotate end
     aim.targeting=false; aim.target=nil
 end
-local function aimLock(r)
-    if not r or not r.Parent or not aim.hum or not aim.hrp then return end
-    if aim.targeting and aim.target==r then return end
-    aimUnlock(); aim.target=r; aim.targeting=true; aim.autoRotate=aim.hum.AutoRotate; aim.hum.AutoRotate=false
-    local th=r.Parent:FindFirstChildOfClass("Humanoid"); if th then aim.deathConn=th.Died:Connect(aimUnlock) end
-    task.delay(aim.lockTime, function() if aim.target==r then aimUnlock() end end)
+local function aimLock(t)
+    if not t or not t.root or not t.humanoid then return end
+    if t.humanoid.Health<=0 then return end
+    if not aim.hum or not aim.hrp then return end
+    if aim.targeting and aim.target==t then return end
+    aimUnlock(); aim.target=t; aim.targeting=true; aim.autoRotate=aim.hum.AutoRotate; aim.hum.AutoRotate=false
+    aim.deathConn=t.humanoid.Died:Connect(aimUnlock)
+    task.delay(aim.lockTime, function() if aim.target==t then aimUnlock() end end)
 end
 svc.Run.RenderStepped:Connect(function()
     if not aim.on or not aim.targeting or not aim.hrp or not aim.target then return end
-    if not aim.target.Parent then aimUnlock(); return end
-    local th=aim.target.Parent:FindFirstChildOfClass("Humanoid"); if not th or th.Health<=0 then aimUnlock(); return end
-    local flat=Vector3.new(aim.target.Position.X-aim.hrp.Position.X,0,aim.target.Position.Z-aim.hrp.Position.Z).Unit
+    local t=aim.target
+    if not t.root or not t.root.Parent then aimUnlock(); return end
+    if not t.humanoid or t.humanoid.Health<=0 then aimUnlock(); return end
+    -- use velocity prediction to rotate toward where target is heading
+    local vel = t.root.AssemblyLinearVelocity or Vector3.zero
+    local predictedPos = t.root.Position + vel * 0.1
+    local flat=Vector3.new(predictedPos.X-aim.hrp.Position.X,0,predictedPos.Z-aim.hrp.Position.Z).Unit
     if flat.Magnitude>0 then aim.hrp.CFrame=aim.hrp.CFrame:Lerp(CFrame.new(aim.hrp.Position,aim.hrp.Position+flat),aim.smooth) end
 end)
 
@@ -525,7 +521,7 @@ end)
 task.spawn(function()
     local remote = hbGetRemote()
     if not remote then
-        warn("[v1prware] Aimbot: could not find RemoteEvent — aimbot trigger disabled")
+        warn("[sakiware] Aimbot: could not find RemoteEvent — aimbot trigger disabled")
         return
     end
     remote.OnClientEvent:Connect(function(...)
@@ -540,14 +536,14 @@ end)
 lp.CharacterAdded:Connect(function(ch) task.wait(0.5); aimRefreshChar(ch) end)
 if lp.Character then aimRefreshChar(lp.Character) end
 
-secAimbot:Toggle({ Title="Enable Aimbot",      Type="Checkbox", Default=aim.on,       Callback=function(on) aim.on=on;       cfg.set("aimOn",on);       if not on then aimUnlock() end end })
-secAimbot:Slider({ Title="Cooldown (s)",        Step=0.05, Value={Min=0.1, Max=2.0, Default=aim.cooldown}, Callback=function(v) aim.cooldown=v; cfg.set("aimCooldown",v) end })
-secAimbot:Slider({ Title="Lock Time (s)",       Step=0.1,  Value={Min=0.1, Max=3.0, Default=aim.lockTime}, Callback=function(v) aim.lockTime=v; cfg.set("aimLockTime",v)  end })
-secAimbot:Slider({ Title="Max Distance",        Step=5,    Value={Min=5,   Max=100, Default=aim.maxDist},  Callback=function(v) aim.maxDist=v;  cfg.set("aimMaxDist",v)   end })
-secAimbot:Slider({ Title="Rotation Smoothing",  Step=0.05, Value={Min=0.05,Max=1.0, Default=aim.smooth},  Callback=function(v) aim.smooth=v;   cfg.set("aimSmooth",v)    end })
+secAimbot:Toggle({ Title="Enable Aimbot",      Type="Checkbox", Flag="aimOn",       Default=aim.on,       Callback=function(on) aim.on=on;       if not on then aimUnlock() end end })
+secAimbot:Slider({ Title="Cooldown (s)",        Flag="aimCooldown", Step=0.05, Value={Min=0.1, Max=2.0, Default=aim.cooldown}, Callback=function(v) aim.cooldown=v end })
+secAimbot:Slider({ Title="Lock Time (s)",       Flag="aimLockTime", Step=0.1,  Value={Min=0.1, Max=3.0, Default=aim.lockTime}, Callback=function(v) aim.lockTime=v  end })
+secAimbot:Slider({ Title="Max Distance",        Flag="aimMaxDist",  Step=5,    Value={Min=5,   Max=100, Default=aim.maxDist},  Callback=function(v) aim.maxDist=v;     end })
+secAimbot:Slider({ Title="Rotation Smoothing",  Flag="aimSmooth",   Step=0.05, Value={Min=0.05,Max=1.0, Default=aim.smooth},  Callback=function(v) aim.smooth=v;       end })
 
 local secABS = tabKiller:Section({ Title = "Anti-Backstab", Opened = true })
-local abs = { on=cfg.get("absOn",false), range=cfg.get("absRange",40), duration=cfg.get("absDur",1.5), locked=false, soundConn=nil, scanThread=nil, rings={} }
+local abs = { on=false, range=40, duration=1.5, locked=false, soundConn=nil, scanThread=nil, rings={} }
 local absTriggerSounds = { ["86710781315432"]=true, ["99820161736138"]=true }
 local absScreenGui = nil
 local function absGui()
@@ -601,39 +597,16 @@ end
 local function absStart() absHookSounds(); absStartScan() end
 local function absStop() abs.on=false; if abs.soundConn then abs.soundConn:Disconnect(); abs.soundConn=nil end; if abs.scanThread then task.cancel(abs.scanThread); abs.scanThread=nil end; absCleanRings(); abs.locked=false; absShowLabel(false) end
 lp.CharacterAdded:Connect(function() abs.locked=false; if abs.on then absStart() end end)
-secABS:Toggle({ Title="Enable Anti-Backstab", Type="Checkbox", Default=abs.on, Callback=function(on) abs.on=on; cfg.set("absOn",on); if on then absStart() else absStop() end end })
-secABS:Slider({ Title="Detection Range",   Step=5,  Value={Min=10,Max=120,Default=abs.range},    Callback=function(v) abs.range=v;    cfg.set("absRange",v); absResizeRings() end })
-secABS:Slider({ Title="Look Duration (s)", Step=0.1,Value={Min=0.3,Max=5.0,Default=abs.duration}, Callback=function(v) abs.duration=v; cfg.set("absDur",v)                   end })
+secABS:Toggle({ Title="Enable Anti-Backstab", Type="Checkbox", Flag="absOn", Default=abs.on, Callback=function(on) abs.on=on; if on then absStart() else absStop() end end })
+secABS:Slider({ Title="Detection Range",   Flag="absRange", Step=5,  Value={Min=10,Max=120,Default=abs.range},    Callback=function(v) abs.range=v;    absResizeRings() end })
+secABS:Slider({ Title="Look Duration (s)", Flag="absDur",   Step=0.1,Value={Min=0.3,Max=5.0,Default=abs.duration}, Callback=function(v) abs.duration=v                   end })
 
 ------------------------------------------------------------------------
 -- KILLER ABILITY CONTROLS
 ------------------------------------------------------------------------
 
--- Sixer Air Strafe
-local sixerStrafeOn = cfg.get("sixerStrafeOn", false)
-local SIXER_BIND    = "LunawareSixerStrafe"
-svc.Run:BindToRenderStep(SIXER_BIND, Enum.RenderPriority.Character.Value + 2, function()
-    if not sixerStrafeOn then return end
-    local char = lp.Character; if not char then return end
-    if char:GetAttribute("PursuitState") ~= "Dashing" then return end
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if not hrp or not hum then return end
-    if hum.FloorMaterial ~= Enum.Material.Air then return end
-    local cam  = svc.WS.CurrentCamera
-    local flat = cam.CFrame.LookVector * Vector3.new(1, 0, 1)
-    if flat.Magnitude < 0.01 then return end
-    flat = flat.Unit
-    local vel   = hrp.AssemblyLinearVelocity
-    local hVel  = Vector3.new(vel.X, 0, vel.Z)
-    local hSpeed= hVel.Magnitude
-    if hSpeed < 0.1 then return end
-    local newH = hVel:Lerp(flat * hSpeed, 1)
-    hrp.AssemblyLinearVelocity = Vector3.new(newH.X, vel.Y, newH.Z)
-end)
-
 -- c00lkidd Dash Turn (WSO)
-local coolkidWSOOn = cfg.get("coolkidWSOOn", false)
+local coolkidWSOOn = false
 local function coolkidGetInputDir()
     local cf       = svc.WS.CurrentCamera.CFrame
     local camFwd   = Vector3.new(cf.LookVector.X,  0, cf.LookVector.Z)
@@ -664,7 +637,7 @@ svc.Run.RenderStepped:Connect(function(dt)
 end)
 
 -- Noli Void Rush
-local noliVoidRushOn     = cfg.get("noliVoidRushOn", false)
+local noliVoidRushOn     = false
 local noliOverrideActive = false
 local noliOrigWalkSpeed  = nil
 local noliConn           = nil
@@ -700,9 +673,8 @@ lp.CharacterAdded:Connect(function() noliStop(); noliOrigWalkSpeed = nil end)
 
 -- Killer Ability UI
 local secKillerAbilities = tabKiller:Section({ Title = "Killer Abilities", Opened = true })
-secKillerAbilities:Toggle({ Title="Sixer — Air Strafe",       Type="Checkbox", Default=sixerStrafeOn, Callback=function(on) sixerStrafeOn=on; cfg.set("sixerStrafeOn",on) end })
-secKillerAbilities:Toggle({ Title="c00lkidd — Dash Turn",     Type="Checkbox", Default=coolkidWSOOn,  Callback=function(on) coolkidWSOOn=on;  cfg.set("coolkidWSOOn",on)  end })
-secKillerAbilities:Toggle({ Title="Noli — Void Rush Control", Type="Checkbox", Default=noliVoidRushOn,Callback=function(on) noliVoidRushOn=on; cfg.set("noliVoidRushOn",on); if not on then noliStop() end end })
+secKillerAbilities:Toggle({ Title="c00lkidd — Dash Turn",     Type="Checkbox", Flag="coolkidWSOOn",  Default=coolkidWSOOn,  Callback=function(on) coolkidWSOOn=on;    end })
+secKillerAbilities:Toggle({ Title="Noli — Void Rush Control", Type="Checkbox", Flag="noliVoidRushOn",Default=noliVoidRushOn,Callback=function(on) noliVoidRushOn=on; if not on then noliStop() end end })
 
 ------------------------------------------------------------------------
 ------------------------------------------------------------------------
@@ -713,11 +685,11 @@ local tabVisual = win:Tab({ Title = "Visual", Icon = "eye" })
 local secESP    = tabVisual:Section({ Title = "ESP", Opened = true })
 
 local esp = {
-    killers    = cfg.get("espKillers",    false),
-    survivors  = cfg.get("espSurvivors",  false),
-    generators = cfg.get("espGenerators", false),
-    items      = cfg.get("espItems",      false),
-    buildings  = cfg.get("espBuildings",  false),
+    killers    = false,
+    survivors  = false,
+    generators = false,
+    items      = false,
+    buildings  = false,
     killerFolder=nil, survivorFolder=nil, mapFolder=nil,
     playerConns={}, mapConns={}, healthConns={}, progConns={}, guardConns={}, ready=false,
 }
@@ -860,17 +832,17 @@ local function espBindWorld()
     local existing=getMapContent(); if existing then esp.mapFolder=existing; task.spawn(function() task.wait(2); if esp.generators then espDoGenerators(true) end; if esp.items then espDoItems(true) end end) end
 end
 
-secESP:Toggle({ Title="Killers",    Type="Checkbox", Default=esp.killers,    Callback=function(on) esp.killers=on;    cfg.set("espKillers",on);    task.spawn(function() espDoKillers(on)    end) end })
-secESP:Toggle({ Title="Survivors",  Type="Checkbox", Default=esp.survivors,  Callback=function(on) esp.survivors=on;  cfg.set("espSurvivors",on);  task.spawn(function() espDoSurvivors(on)  end) end })
-secESP:Toggle({ Title="Generators", Type="Checkbox", Default=esp.generators, Callback=function(on) esp.generators=on; cfg.set("espGenerators",on); task.spawn(function() espDoGenerators(on) end) end })
-secESP:Toggle({ Title="Items",      Type="Checkbox", Default=esp.items,      Callback=function(on) esp.items=on;      cfg.set("espItems",on);      task.spawn(function() espDoItems(on)      end) end })
-secESP:Toggle({ Title="Buildings",  Type="Checkbox", Default=esp.buildings,  Callback=function(on) esp.buildings=on;  cfg.set("espBuildings",on);  task.spawn(function() espDoBuildings(on)  end) end })
+secESP:Toggle({ Title="Killers",    Type="Checkbox", Flag="espKillers",    Default=esp.killers,    Callback=function(on) esp.killers=on;    task.spawn(function() espDoKillers(on)    end) end })
+secESP:Toggle({ Title="Survivors",  Type="Checkbox", Flag="espSurvivors",  Default=esp.survivors,  Callback=function(on) esp.survivors=on;  task.spawn(function() espDoSurvivors(on)  end) end })
+secESP:Toggle({ Title="Generators", Type="Checkbox", Flag="espGenerators", Default=esp.generators, Callback=function(on) esp.generators=on; task.spawn(function() espDoGenerators(on) end) end })
+secESP:Toggle({ Title="Items",      Type="Checkbox", Flag="espItems",      Default=esp.items,      Callback=function(on) esp.items=on;      task.spawn(function() espDoItems(on)      end) end })
+secESP:Toggle({ Title="Buildings",  Type="Checkbox", Flag="espBuildings",  Default=esp.buildings,  Callback=function(on) esp.buildings=on;  task.spawn(function() espDoBuildings(on)  end) end })
 
 ------------------------------------------------------------------------
 -- Minion + Puddle ESP
 ------------------------------------------------------------------------
 local secMinion = tabVisual:Section({ Title = "Minion & Ability ESP", Opened = true })
-local mset = { pizza=cfg.get("espPizza",false), zombie=cfg.get("espZombie",false), puddle=cfg.get("espPuddle",false), transparency=cfg.get("espMinionTrans",0.25) }
+local mset = { pizza=false, zombie=false, puddle=false, transparency=0.25 }
 local tracked = { pizza={}, zombie={}, puddle={} }
 
 local function isRealPlayer(obj)
@@ -1004,10 +976,10 @@ lp.CharacterAdded:Connect(function()
     if mset.puddle then scanPuddles() end
 end)
 
-secMinion:Toggle({ Title="c00lkidd Pizza Bots",   Desc="PizzaDeliveryRig — orange highlight", Type="Checkbox", Default=mset.pizza,  Callback=function(on) mset.pizza=on;  cfg.set("espPizza",on);  if on then scanPizza()   else clearTag("pizza")  end end })
-secMinion:Toggle({ Title="1x1x1x1 Zombies",       Desc="1x1x1x1Zombie — green highlight",     Type="Checkbox", Default=mset.zombie, Callback=function(on) mset.zombie=on; cfg.set("espZombie",on); if on then scanZombie()  else clearTag("zombie") end end })
-secMinion:Toggle({ Title="JD Digital Footprints", Desc="Black disc + red glow",               Type="Checkbox", Default=mset.puddle, Callback=function(on) mset.puddle=on; cfg.set("espPuddle",on); if on then scanPuddles() else clearTag("puddle") end end })
-secMinion:Slider({ Title="Highlight Transparency", Step=0.05, Value={Min=0,Max=1,Default=mset.transparency}, Callback=function(v) mset.transparency=v; cfg.set("espMinionTrans",v); updateTransparency() end })
+secMinion:Toggle({ Title="c00lkidd Pizza Bots",   Desc="PizzaDeliveryRig — orange highlight", Type="Checkbox", Flag="espPizza",      Default=mset.pizza,  Callback=function(on) mset.pizza=on;  if on then scanPizza()   else clearTag("pizza")  end end })
+secMinion:Toggle({ Title="1x1x1x1 Zombies",       Desc="1x1x1x1Zombie — green highlight",     Type="Checkbox", Flag="espZombie",     Default=mset.zombie, Callback=function(on) mset.zombie=on; if on then scanZombie()  else clearTag("zombie") end end })
+secMinion:Toggle({ Title="JD Digital Footprints", Desc="Black disc + red glow",               Type="Checkbox", Flag="espPuddle",     Default=mset.puddle, Callback=function(on) mset.puddle=on; if on then scanPuddles() else clearTag("puddle") end end })
+secMinion:Slider({ Title="Highlight Transparency", Flag="espMinionTrans", Step=0.05, Value={Min=0,Max=1,Default=mset.transparency}, Callback=function(v) mset.transparency=v; updateTransparency() end })
 secMinion:Button({ Title="🔄 Force Rescan", Callback=function() clearTag("pizza"); clearTag("zombie"); clearTag("puddle"); task.wait(0.1); scanPizza(); scanZombie(); scanPuddles() end })
 
 ------------------------------------------------------------------------
@@ -1018,9 +990,9 @@ secMinion:Button({ Title="🔄 Force Rescan", Callback=function() clearTag("pizz
 local tabMusic = win:Tab({ Title = "Music", Icon = "music" })
 local secLMS   = tabMusic:Section({ Title = "LMS Music", Opened = true })
 
-local music = { on=cfg.get("musicOn",false), selected=cfg.get("musicSel","CondemnedLMS"), cached={}, origId=nil, thread=nil }
-local musicDir = "V1PRWARE/LMS_Songs"
-if not fs.hasFolder("V1PRWARE") then fs.makeFolder("V1PRWARE") end
+local music = { on=false, selected="CondemnedLMS", cached={}, origId=nil, thread=nil }
+local musicDir = "SAKIWARE/LMS_Songs"
+if not fs.hasFolder("SAKIWARE") then fs.makeFolder("SAKIWARE") end
 if not fs.hasFolder(musicDir) then fs.makeFolder(musicDir) end
 local musicTracks = {
     ["AbberantLMS"]              = "https://files.catbox.moe/4bb0g9.mp3",
@@ -1080,17 +1052,15 @@ local function musicMonitor()
         else task.wait(1) end
     end
 end
-secLMS:Toggle({ Title="Auto-Play on LMS", Type="Checkbox", Default=music.on, Callback=function(on) music.on=on; cfg.set("musicOn",on); if on then music.thread=task.spawn(musicMonitor) else if music.thread then task.cancel(music.thread); music.thread=nil end; musicReset() end end })
-secLMS:Dropdown({ Title="Track", Values=musicList, Value=music.selected, Callback=function(sel) music.selected=type(sel)=="table" and sel[1] or sel; cfg.set("musicSel",music.selected); task.spawn(function()musicFetch(music.selected)end) end })
+secLMS:Toggle({ Title="Auto-Play on LMS", Type="Checkbox", Flag="musicOn", Default=music.on, Callback=function(on) music.on=on; if on then music.thread=task.spawn(musicMonitor) else if music.thread then task.cancel(music.thread); music.thread=nil end; musicReset() end end })
+secLMS:Dropdown({ Title="Track", Flag="musicSel", Values=musicList, Value=music.selected, Callback=function(sel) music.selected=type(sel)=="table" and sel[1] or sel; task.spawn(function()musicFetch(music.selected)end) end })
 secLMS:Button({ Title="▶  Play",        Callback=function() musicPlay(music.selected) end })
 secLMS:Button({ Title="■  Stop",        Callback=function() musicReset() end })
 secLMS:Button({ Title="↓  Preload LMS", Callback=function() for name in pairs(musicTracks) do task.spawn(function()musicFetch(name)end); task.wait(0.1) end end })
 lp.CharacterAdded:Connect(function() task.wait(3); if music.on then if music.thread then task.cancel(music.thread) end; music.thread=task.spawn(musicMonitor) end end)
 
 local tabElliot  = win:Tab({ Title = "Elliot",    Icon = "pizza"     })
-local tabSurSen  = win:Tab({ Title = "Guest1337", Icon = "shield"    })
 local tabChance  = win:Tab({ Title = "Chance",    Icon = "crosshair" })
-local tabTwoTime = win:Tab({ Title = "TwoTime",   Icon = "knife"     })
 
 -- Elliot Aimbot
 do
@@ -1245,19 +1215,18 @@ do
         end
     end
 
-    sec_014:Paragraph({ Title = "How it works", Content = "Hooks the UseActorAbility FireServer call to detect when you throw a pizza. While throwing, it aims your HRP and/or camera toward the lowest-health survivor." })
-    sec_014:Slider({ Title = "Prediction Studs", Value = {Min=0,Max=50,Default=5}, Step = 1, Callback=function(v) elliotPredDist=v end })
-    sec_014:Slider({ Title = "Aim Duration (s)", Value = {Min=0.1,Max=2,Default=0.5}, Step = 0.1, Callback=function(v) elliotThrowDur=v end })
-    sec_014:Slider({ Title = "Pizza Throw Force", Value = {Min=50,Max=150,Default=80}, Step = 5, Callback=function(v) elliotThrowForce=v end })
-    sec_014:Slider({ Title = "Arc Segments", Value = {Min=20,Max=100,Default=50}, Step = 5, Callback=function(v) elliotArcSegs=v end })
-    sec_014:Dropdown({ Title = "Aimbot Type", Values = {"HRP Aimbot","Camera Aimbot","Camera + Character"}, Default = "Camera + Character", Callback=function(v) elliotAimType=v end })
-    sec_014:Toggle({ Title = "Show Pizza Arc", Default = false, Callback=function(v)
+    sec_014:Slider({ Title = "Prediction Studs", Flag = "elliotPredDist", Value = {Min=0,Max=50,Default=5}, Step = 1, Callback=function(v) elliotPredDist=v end })
+    sec_014:Slider({ Title = "Aim Duration (s)", Flag = "elliotThrowDur", Value = {Min=0.1,Max=2,Default=0.5}, Step = 0.1, Callback=function(v) elliotThrowDur=v end })
+    sec_014:Slider({ Title = "Pizza Throw Force", Flag = "elliotThrowForce", Value = {Min=50,Max=150,Default=80}, Step = 5, Callback=function(v) elliotThrowForce=v end })
+    sec_014:Slider({ Title = "Arc Segments", Flag = "elliotArcSegs", Value = {Min=20,Max=100,Default=50}, Step = 5, Callback=function(v) elliotArcSegs=v end })
+    sec_014:Dropdown({ Title = "Aimbot Type", Flag = "elliotAimType", Values = {"HRP Aimbot","Camera Aimbot","Camera + Character"}, Default = "Camera + Character", Callback=function(v) elliotAimType=v end })
+    sec_014:Toggle({ Title = "Show Pizza Arc", Flag = "elliotShowArc", Default = false, Callback=function(v)
         elliotShowArc=v
         if v then elliotCreateArcFolder()
         else elliotClearArc(); if elliotArcFolder then elliotArcFolder:Destroy(); elliotArcFolder=nil end end
     end, Type = "Checkbox"})
-    sec_014:Toggle({ Title = "Require Throw Animation", Default = true, Callback=function(v) elliotRequireAnim=v end, Type = "Checkbox"})
-    sec_014:Toggle({ Title = "Enable Elliot Aimbot", Default = false, Callback=function(v)
+    sec_014:Toggle({ Title = "Require Throw Animation", Flag = "elliotReqAnim", Default = true, Callback=function(v) elliotRequireAnim=v end, Type = "Checkbox"})
+    sec_014:Toggle({ Title = "Enable Elliot Aimbot", Flag = "elliotEnabled", Default = false, Callback=function(v)
         elliotEnabled = v
         if v then
             elliotConnection = svc.Run.RenderStepped:Connect(function()
@@ -1285,661 +1254,6 @@ do
 end
 
 
-
-------------------------------------------------------------------------
--- GUEST1337 — Auto Block & Combat
-------------------------------------------------------------------------
-local sec_015 = tabSurSen:Section({ Title = "Auto Block & Combat", Opened = true })
-
--- Settings
-local combatS = {
-    autoBlockOn = cfg.get("combatABOn", false),
-    blockType = cfg.get("combatBlockType", "Block"),
-    detectionRange = cfg.get("combatDetectRange", 18),
-    blockDelay = cfg.get("combatBlockDelay", 0),
-    doubleBlock = cfg.get("combatDoubleBlock", true),
-    antiBait = cfg.get("combatAntiBait", false),
-    abMissChance = cfg.get("combatABMiss", 0),
-    autoPunchOn = cfg.get("combatAutoPunch", false),
-    hdtEnabled = cfg.get("combatHDT", false),
-    hdtSpeed = cfg.get("combatHDTSpeed", 12),
-    hdtDelay = cfg.get("combatHDTDelay", 0),
-    hdtMissChance = cfg.get("combatHDTMiss", 0),
-    killerCircles = cfg.get("combatCircles", false),
-    facingCheck = cfg.get("combatFacingCheck", true),
-    facingVisual = cfg.get("combatFacingVis", false),
-    facingVisRadius = cfg.get("combatFacingVisRadius", 3),
-    charLockOn = cfg.get("combatCharLock", false),
-    lockMaxDist = cfg.get("combatLockMaxDist", 30),
-    predictionVal = cfg.get("combatPrediction", 4),
-}
-
-local TRIGGER_SOUNDS = {
-    ["102228729296384"]=true,["140242176732868"]=true,["112809109188560"]=true,["136323728355613"]=true,
-    ["115026634746636"]=true,["84116622032112"]=true, ["108907358619313"]=true,["127793641088496"]=true,
-    ["86174610237192"]=true, ["95079963655241"]=true, ["101199185291628"]=true,["119942598489800"]=true,
-    ["84307400688050"]=true, ["113037804008732"]=true,["105200830849301"]=true,["75330693422988"]=true,
-    ["82221759983649"]=true, ["109348678063422"]=true,["81702359653578"]=true, ["85853080745515"]=true,
-    ["108610718831698"]=true,["112395455254818"]=true,["109431876587852"]=true,["12222216"]=true,
-    ["79980897195554"]=true, ["119583605486352"]=true,["71834552297085"]=true, ["116581754553533"]=true,
-    ["86833981571073"]=true, ["110372418055226"]=true,["105840448036441"]=true,["86494585504534"]=true,
-    ["80516583309685"]=true, ["131406927389838"]=true,["89004992452376"]=true, ["117231507259853"]=true,
-    ["101698569375359"]=true,["101553872555606"]=true,["140412278320643"]=true,["106300477136129"]=true,
-    ["117173212095661"]=true,["104910828105172"]=true,["140194172008986"]=true,["85544168523099"]=true,
-    ["114506382930939"]=true,["99829427721752"]=true, ["120059928759346"]=true,["104625283622511"]=true,
-    ["105316545074913"]=true,["126131675979001"]=true,["82336352305186"]=true, ["93366464803829"]=true,
-    ["84069821282466"]=true, ["128856426573270"]=true,["121954639447247"]=true,["128195973631079"]=true,
-    ["124903763333174"]=true,["94317217837143"]=true, ["98111231282218"]=true, ["119089145505438"]=true,
-    ["136728245733659"]=true,["71310583817000"]=true, ["107444859834748"]=true,["76959687420003"]=true,
-    ["72425554233832"]=true, ["96594507550917"]=true, ["139996647355899"]=true,["107345261604889"]=true,
-    ["127557531826290"]=true,["108651070773439"]=true,["74842815979546"]=true, ["124397369810639"]=true,
-    ["76467993976301"]=true, ["118493324723683"]=true,["78298577002481"]=true, ["116527305931161"]=true,
-    ["5148302439"]=true,     ["98675142200448"]=true, ["128367348686124"]=true,["71805956520207"]=true,
-    ["125213046326879"]=true,["84353899757208"]=true, ["103684883268194"]=true,["109246041199659"]=true,
-    ["80540530406270"]=true, ["139523195429581"]=true,["105204810054381"]=true,["114742322778642"]=true,
-}
-
--- Block anim IDs for HDT detection
-local BLOCK_ANIMS = {
-    ["72722244508749"]=true,["96959123077498"]=true,["95802026624883"]=true,
-    ["100926346851492"]=true,["120748030255574"]=true,
-}
-
-local BAIT_KILLERS = {"John Doe","Slasher","c00lkidd","Jason","1x1x1x1","Noli","Sixer","Nosferatu"}
-local STRICT_FACING_DOT = 0.70
-local _cachedAnimator = nil
-
-local function combatIsFacing(myRoot, targetRoot, killerName)
-    if not combatS.facingCheck then return true end
-    if not myRoot or not targetRoot then return false end
-    local diff = myRoot.Position - targetRoot.Position
-    if diff.Magnitude < 0.01 then return true end
-    local dir = diff.Unit
-    local dot = targetRoot.CFrame.LookVector:Dot(dir)
-    local bait = false
-    if killerName then
-        for _, n in ipairs(BAIT_KILLERS) do
-            if killerName:find(n) then bait = true; break end
-        end
-    end
-    if bait then
-        local vel = Vector3.zero
-        pcall(function() vel = targetRoot.AssemblyLinearVelocity end)
-        if vel.Magnitude < 0.01 then pcall(function() vel = targetRoot.Velocity end) end
-        local side = math.abs(vel:Dot(targetRoot.CFrame.RightVector))
-        if side > 3 then return false end
-        return dot > STRICT_FACING_DOT + 0.05
-    end
-    return dot > STRICT_FACING_DOT
-end
-
--- Helper functions
-local function combatGetKillersFolder()
-    local p = svc.WS:FindFirstChild("Players")
-    return p and p:FindFirstChild("Killers")
-end
-
-local function combatGetNearestKiller()
-    local char = lp.Character; if not char then return nil end
-    local myRoot = char:FindFirstChild("HumanoidRootPart"); if not myRoot then return nil end
-    local kf = combatGetKillersFolder(); if not kf then return nil end
-    local best, bestD = nil, math.huge
-    for _, k in pairs(kf:GetChildren()) do
-        local hrp = k:FindFirstChild("HumanoidRootPart")
-        if hrp then
-            local d = (hrp.Position - myRoot.Position).Magnitude
-            if d < bestD then best, bestD = k, d end
-        end
-    end
-    return best
-end
-
-local function combatRollMiss(chance)
-    if chance <= 0 then return false end
-    if chance >= 100 then return true end
-    return math.random(1, 100) <= chance
-end
-
-local function combatFireAbility(abilityType)
-    local rem = hbGetRemote()
-    if not rem then return end
-    local buf
-    if abilityType == "Block" then
-        buf = buffer.fromstring("\x03\x05\x00\x00\x00Block")
-    elseif abilityType == "Punch" then
-        buf = buffer.fromstring("\x03\x05\x00\x00\x00Punch")
-    elseif abilityType == "Charge" then
-        buf = buffer.fromstring("\x03\x06\x00\x00\x00Charge")
-    elseif abilityType == "Clone" then
-        buf = buffer.fromstring("\x03\x05\x00\x00\x00Clone")
-    else
-        buf = buffer.fromstring("\x03\x05\x00\x00\x00Block")
-    end
-    pcall(function() rem:FireServer("UseActorAbility", {[1] = buf}) end)
-    pcall(function() rem:FireServer(abilityType) end)
-end
-
--- Auto Block (Audio-based) — event-driven hook system
-local combatSoundHooks        = {}
-local combatSoundBlockedUntil = {}
-local combatLastBlockTime     = 0
-local BLOCK_CD                = 0.1
-
-local function combatExtractSoundId(sound)
-    if not sound then return nil end
-    return tostring(sound.SoundId):match("%d+")
-end
-
-local function combatTryBlockFromSound(sound, preId)
-    if not combatS.autoBlockOn then return end
-    if not sound or not sound:IsA("Sound") then return end
-
-    local id = preId or combatExtractSoundId(sound)
-    if not id or not TRIGGER_SOUNDS[id] then return end
-
-    local now = tick()
-    if now - combatLastBlockTime < BLOCK_CD then return end
-    if combatSoundBlockedUntil[sound] and now < combatSoundBlockedUntil[sound] then return end
-
-    local char = lp.Character; if not char then return end
-    local myRoot = char:FindFirstChild("HumanoidRootPart"); if not myRoot then return end
-
-    -- Resolve killer from the sound's parent part
-    local soundPart
-    if sound.Parent and sound.Parent:IsA("BasePart") then
-        soundPart = sound.Parent
-    elseif sound.Parent and sound.Parent:IsA("Attachment")
-        and sound.Parent.Parent and sound.Parent.Parent:IsA("BasePart") then
-        soundPart = sound.Parent.Parent
-    else
-        soundPart = sound.Parent and sound.Parent:FindFirstChildWhichIsA("BasePart", true)
-    end
-
-    local killerModel = nil
-    if soundPart then
-        local model = soundPart:FindFirstAncestorOfClass("Model")
-        if model and model:FindFirstChildOfClass("Humanoid") then
-            local kf = combatGetKillersFolder()
-            if kf and model:IsDescendantOf(kf) then
-                killerModel = model
-            end
-        end
-    end
-
-    -- Fallback: nearest killer in range
-    if not killerModel then
-        killerModel = combatGetNearestKiller()
-    end
-    if not killerModel then return end
-
-    local hrp = killerModel:FindFirstChild("HumanoidRootPart"); if not hrp then return end
-    local dist = (hrp.Position - myRoot.Position).Magnitude
-    if dist > combatS.detectionRange then return end
-
-    if not combatIsFacing(myRoot, hrp, killerModel.Name) then return end
-
-    if combatS.antiBait then
-        local vel = Vector3.zero
-        pcall(function() vel = hrp.AssemblyLinearVelocity end)
-        if vel.Magnitude < 0.1 then pcall(function() vel = hrp.Velocity end) end
-        local toUs = myRoot.Position - hrp.Position
-        if toUs.Magnitude > 0.1 then
-            if vel:Dot(toUs.Unit) < -3 then return end
-        end
-        if dist > 13 then return end
-        if dist > 6 then
-            local sideSpeed = math.abs(vel:Dot(hrp.CFrame.RightVector))
-            if sideSpeed > 6 and vel:Dot(toUs.Unit) < 0 then return end
-        end
-    end
-
-    if combatRollMiss(combatS.abMissChance) then return end
-    combatLastBlockTime = now
-    combatSoundBlockedUntil[sound] = now + 0.3
-
-    local function doFire()
-        if combatS.blockType == "Block" then
-            combatFireAbility("Block")
-            if combatS.doubleBlock then combatFireAbility("Punch") end
-        elseif combatS.blockType == "Charge" then
-            combatFireAbility("Charge")
-        elseif combatS.blockType == "7n7 Clone" then
-            combatFireAbility("Clone")
-        end
-    end
-
-    if combatS.blockDelay > 0 then
-        task.delay(combatS.blockDelay, doFire)
-    else
-        doFire()
-    end
-end
-
-local function combatHookSound(sound)
-    if not sound or not sound:IsA("Sound") or combatSoundHooks[sound] then return end
-    local preId = combatExtractSoundId(sound)
-    if not preId then return end
-
-    local playedConn = sound.Played:Connect(function()
-        if combatS.autoBlockOn then task.spawn(combatTryBlockFromSound, sound, preId) end
-    end)
-    local propConn = sound:GetPropertyChangedSignal("IsPlaying"):Connect(function()
-        if sound.IsPlaying and combatS.autoBlockOn then
-            task.spawn(combatTryBlockFromSound, sound, preId)
-        end
-    end)
-    local destroyConn; destroyConn = sound.Destroying:Connect(function()
-        pcall(function()
-            playedConn:Disconnect(); propConn:Disconnect(); destroyConn:Disconnect()
-        end)
-        combatSoundHooks[sound]        = nil
-        combatSoundBlockedUntil[sound] = nil
-    end)
-    combatSoundHooks[sound] = { playedConn, propConn, destroyConn }
-    if sound.IsPlaying then task.spawn(combatTryBlockFromSound, sound, preId) end
-end
-
-local function combatHookExistingSounds()
-    local kf = combatGetKillersFolder(); if not kf then return end
-    for _, killer in pairs(kf:GetChildren()) do
-        for _, desc in pairs(killer:GetDescendants()) do
-            if desc:IsA("Sound") then pcall(combatHookSound, desc) end
-        end
-    end
-end
-
-local function combatSetupSoundWatcher()
-    task.spawn(function()
-        local playersFolder = svc.WS:FindFirstChild("Players")
-        if not playersFolder then
-            playersFolder = svc.WS:WaitForChild("Players", 30)
-        end
-        if not playersFolder then return end
-
-        local kf = playersFolder:FindFirstChild("Killers")
-        if not kf then kf = playersFolder:WaitForChild("Killers", 30) end
-        if not kf then return end
-
-        combatHookExistingSounds()
-
-        kf.DescendantAdded:Connect(function(desc)
-            if desc:IsA("Sound") then pcall(combatHookSound, desc) end
-        end)
-        kf.ChildAdded:Connect(function(killer)
-            task.wait(0.1)
-            for _, desc in pairs(killer:GetDescendants()) do
-                if desc:IsA("Sound") then pcall(combatHookSound, desc) end
-            end
-        end)
-    end)
-end
-
--- HDT (Hitbox Dragging Tech) - activates on block animation
--- Uses improved beginDragIntoKiller logic (from FINAL_AUTO_BLOCK) with v1prware BLOCK_ANIMS IDs
-local combatHDTLastTime = 0
-local HDT_CD = 0.5
-local _combatHDTDebounce = false
-
--- Helper to resolve the killer's root part (mirrors getKillerHRP from FINAL_AUTO_BLOCK)
-local function combatGetKillerHRP(killerModel)
-    if not killerModel then return nil end
-    local hrp = killerModel:FindFirstChild("HumanoidRootPart")
-    if hrp then return hrp end
-    if killerModel.PrimaryPart then return killerModel.PrimaryPart end
-    return killerModel:FindFirstChildWhichIsA("BasePart", true)
-end
-
--- Improved drag: saves/restores WalkSpeed AND JumpPower, no blocking 180-flip,
--- tracks target HRP dynamically each Heartbeat tick (mirrors beginDragIntoKiller).
-local function combatHDTBeginDrag(killerModel)
-    if _combatHDTDebounce then return end
-    if not killerModel or not killerModel.Parent then return end
-    local char = lp.Character; if not char then return end
-    local hrp  = char:FindFirstChild("HumanoidRootPart")
-    local hum  = char:FindFirstChildOfClass("Humanoid")
-    if not hrp or not hum then return end
-
-    local targetHRP = combatGetKillerHRP(killerModel)
-    if not targetHRP then return end
-
-    if combatRollMiss(combatS.hdtMissChance) then return end
-
-    _combatHDTDebounce = true
-
-    -- Save locomotion state (WalkSpeed + JumpPower so they are both restored cleanly)
-    local oldWalk         = hum.WalkSpeed
-    local oldJump         = hum.JumpPower
-    local oldPlatformStand = hum.PlatformStand
-
-    hum.WalkSpeed     = 0
-    hum.JumpPower     = 0
-    hum.PlatformStand = false  -- keep physics so BodyVelocity works
-
-    -- BodyVelocity to push the player toward the killer horizontally
-    local bv = Instance.new("BodyVelocity")
-    bv.MaxForce = Vector3.new(1e5, 0, 1e5)
-    bv.Velocity = Vector3.new(0, 0, 0)
-    bv.Parent   = hrp
-
-    local conn
-    conn = svc.Run.Heartbeat:Connect(function(dt)
-        if not _combatHDTDebounce then
-            conn:Disconnect()
-            if bv and bv.Parent then pcall(function() bv:Destroy() end) end
-            hum.WalkSpeed      = oldWalk
-            hum.JumpPower      = oldJump
-            hum.PlatformStand  = oldPlatformStand
-            return
-        end
-
-        -- abort if character or killer was removed
-        if not (char and char.Parent) or not (killerModel and killerModel.Parent) then
-            _combatHDTDebounce = false; return
-        end
-
-        -- refresh target HRP each tick (killer may respawn/teleport)
-        targetHRP = combatGetKillerHRP(killerModel)
-        if not targetHRP then _combatHDTDebounce = false; return end
-
-        local toTarget = targetHRP.Position - hrp.Position
-        local horiz    = Vector3.new(toTarget.X, 0, toTarget.Z)
-        if horiz.Magnitude > 0.01 then
-            local dir = horiz.Unit
-            bv.Velocity = Vector3.new(dir.X * combatS.hdtSpeed, bv.Velocity.Y, dir.Z * combatS.hdtSpeed)
-        else
-            bv.Velocity = Vector3.new(0, bv.Velocity.Y, 0)
-        end
-
-        -- stop when close enough
-        if toTarget.Magnitude <= 2.0 then
-            _combatHDTDebounce = false
-        end
-    end)
-
-    -- Aim at killer during drag (non-blocking, runs in its own thread)
-    task.spawn(function()
-        hum.AutoRotate = false
-        local sw = tick()
-        while tick() - sw < 0.4 do
-            pcall(function()
-                local nk = combatGetNearestKiller()
-                if nk and hrp and hrp.Parent then
-                    local tHRP2 = combatGetKillerHRP(nk)
-                    if tHRP2 then hrp.CFrame = CFrame.lookAt(hrp.Position, tHRP2.Position) end
-                end
-            end)
-            task.wait()
-        end
-        hum.AutoRotate = true
-    end)
-
-    -- Hard timeout (safety net so debounce never gets stuck)
-    task.delay(0.4, function()
-        if _combatHDTDebounce then _combatHDTDebounce = false end
-    end)
-end
-
--- Triggered by AnimationPlayed (event-driven, not polled)
--- Uses File 1's BLOCK_ANIMS IDs:
---   72722244508749, 96959123077498, 95802026624883, 100926346851492, 120748030255574
-local function combatOnBlockAnim(track)
-    pcall(function()
-        if not combatS.hdtEnabled or _combatHDTDebounce then return end
-        local now = tick(); if now - combatHDTLastTime < HDT_CD then return end
-        local id = tostring(track.Animation and track.Animation.AnimationId or ""):match("%d+")
-        if not id or not BLOCK_ANIMS[id] then return end
-        combatHDTLastTime = now
-        local nearest = combatGetNearestKiller(); if not nearest then return end
-        task.spawn(function()
-            if combatS.hdtDelay > 0 then task.wait(combatS.hdtDelay) end
-            combatHDTBeginDrag(nearest)
-        end)
-    end)
-end
-
--- Detection Circles
-local combatCircles = {}
-local function combatUpdateCircles()
-    local kf = combatGetKillersFolder(); if not kf then return end
-    for _, k in pairs(kf:GetChildren()) do
-        local hrp = k:FindFirstChild("HumanoidRootPart")
-        if hrp then
-            if combatS.killerCircles then
-                if not combatCircles[k] then
-                    pcall(function()
-                        local c = Instance.new("CylinderHandleAdornment")
-                        c.Name="CombatCircle"; c.Adornee=hrp
-                        c.Color3=Color3.fromRGB(255,140,170); c.AlwaysOnTop=true; c.ZIndex=1; c.Transparency=0.6
-                        c.Radius=combatS.detectionRange; c.Height=0.12
-                        c.CFrame=CFrame.new(0,-(hrp.Size.Y/2+0.05),0)*CFrame.Angles(math.rad(90),0,0)
-                        c.Parent=hrp; combatCircles[k]=c
-                    end)
-                else
-                    combatCircles[k].Radius = combatS.detectionRange
-                end
-            else
-                if combatCircles[k] then combatCircles[k]:Destroy(); combatCircles[k]=nil end
-            end
-        end
-    end
-    -- Cleanup
-    for k, c in pairs(combatCircles) do
-        if not k.Parent or not k:FindFirstChild("HumanoidRootPart") then
-            pcall(function() c:Destroy() end); combatCircles[k]=nil
-        end
-    end
-end
-
--- Facing Visual (floor circle under killer)
-local combatFacingVisuals = {}
-local function combatUpdateFacing()
-    local kf = combatGetKillersFolder(); if not kf then return end
-    local myRoot = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
-    for _, k in pairs(kf:GetChildren()) do
-        local hrp = k:FindFirstChild("HumanoidRootPart")
-        if hrp then
-            if combatS.facingVisual then
-                if not combatFacingVisuals[k] then
-                    pcall(function()
-                        local v = Instance.new("CylinderHandleAdornment")
-                        v.Name = "FacingVis"; v.Adornee = hrp
-                        v.AlwaysOnTop = true; v.ZIndex = 2
-                        v.Radius = combatS.facingVisRadius; v.Height = 0.08
-                        v.CFrame = CFrame.new(0, -(hrp.Size.Y / 2 + 0.04), -combatS.facingVisRadius) * CFrame.Angles(math.rad(90), 0, 0)
-                        v.Color3 = Color3.fromRGB(120, 255, 120); v.Transparency = 0.3
-                        v.Parent = hrp
-                        combatFacingVisuals[k] = v
-                    end)
-                end
-                local vis = combatFacingVisuals[k]
-                if vis and vis.Parent then
-                    vis.Radius = combatS.facingVisRadius
-                    vis.CFrame = CFrame.new(0, -(hrp.Size.Y / 2 + 0.04), -combatS.facingVisRadius) * CFrame.Angles(math.rad(90), 0, 0)
-                    local inRange, facing = false, false
-                    if myRoot then
-                        inRange = (hrp.Position - myRoot.Position).Magnitude <= combatS.detectionRange
-                        if inRange then facing = combatIsFacing(myRoot, hrp, k.Name) end
-                    end
-                    if inRange and facing then
-                        vis.Color3 = Color3.fromRGB(120, 255, 120); vis.Transparency = 0.3
-                    elseif inRange then
-                        vis.Color3 = Color3.fromRGB(255, 120, 120); vis.Transparency = 0.4
-                    else
-                        vis.Color3 = Color3.fromRGB(255, 255, 120); vis.Transparency = 0.7
-                    end
-                end
-            else
-                if combatFacingVisuals[k] then combatFacingVisuals[k]:Destroy(); combatFacingVisuals[k] = nil end
-            end
-        end
-    end
-end
-
--- Main loops
-local combatSoundTickConn = nil
-local combatVisualTickConn = nil
-
-local function combatStartLoops()
-    -- Sound cleanup tick (detection is now event-driven via combatHookSound)
-    if combatSoundTickConn then combatSoundTickConn:Disconnect() end
-    combatSoundTickConn = svc.Run.Heartbeat:Connect(function()
-        if not combatS.autoBlockOn then return end
-        -- Clean up stale entries from the blocked table
-        local now = tick()
-        for sound, t in pairs(combatSoundBlockedUntil) do
-            if now > t then combatSoundBlockedUntil[sound] = nil end
-        end
-    end)
-
-    -- Visual tick
-    if combatVisualTickConn then combatVisualTickConn:Disconnect() end
-    combatVisualTickConn = svc.Run.Heartbeat:Connect(function()
-        combatUpdateCircles()
-        combatUpdateFacing()
-    end)
-end
-
-local function combatStopLoops()
-    if combatSoundTickConn then combatSoundTickConn:Disconnect(); combatSoundTickConn = nil end
-    if combatVisualTickConn then combatVisualTickConn:Disconnect(); combatVisualTickConn = nil end
-    -- Cleanup visuals
-    for k, c in pairs(combatCircles) do pcall(function() c:Destroy() end) end
-    for k, v in pairs(combatFacingVisuals) do pcall(function() v:Destroy() end) end
-    combatCircles = {}
-    combatFacingVisuals = {}
-end
-
--- Animator hook for HDT
-local function combatRefreshAnimator()
-    local c = lp.Character; if not c then _cachedAnimator = nil; return end
-    local h = c:FindFirstChildOfClass("Humanoid")
-    _cachedAnimator = h and h:FindFirstChildOfClass("Animator") or nil
-    if _cachedAnimator then
-        _cachedAnimator.AnimationPlayed:Connect(combatOnBlockAnim)
-    end
-end
-
--- Character handlers
-lp.CharacterAdded:Connect(function(char)
-    task.wait(0.6)
-    combatRefreshAnimator()
-    if combatS.autoBlockOn then combatSetupSoundWatcher() end
-    if combatS.autoBlockOn or combatS.killerCircles or combatS.facingVisual then
-        combatStartLoops()
-    end
-end)
-
-if lp.Character then
-    task.spawn(function()
-        task.wait(1)
-        combatRefreshAnimator()
-        if combatS.autoBlockOn then combatSetupSoundWatcher() end
-        if combatS.autoBlockOn or combatS.killerCircles or combatS.facingVisual then
-            combatStartLoops()
-        end
-    end)
-end
-
--- Auto Punch loop
-task.spawn(function()
-    while true do
-        task.wait(0.25)
-        if not combatS.autoPunchOn then continue end
-        local char = lp.Character; if not char then continue end
-        local myRoot = char:FindFirstChild("HumanoidRootPart"); if not myRoot then continue end
-        local kf = combatGetKillersFolder(); if not kf then continue end
-        for _, k in pairs(kf:GetChildren()) do
-            local hrp = k:FindFirstChild("HumanoidRootPart")
-            if hrp and (hrp.Position - myRoot.Position).Magnitude <= 10 then
-                combatFireAbility("Punch"); break
-            end
-        end
-    end
-end)
-
--- UI Elements
-sec_015:Toggle({ Title = "Auto Block (Audio)", Default = combatS.autoBlockOn, Callback=function(on) 
-        combatS.autoBlockOn=on; cfg.set("combatABOn",on)
-        if on then combatSetupSoundWatcher(); combatStartLoops()
-        else combatStopLoops() end
-    end, Type = "Checkbox"})
-
-sec_015:Dropdown({ Title = "Block Type", Values = {"Block","Charge","7n7 Clone"}, Default = combatS.blockType, Callback=function(v) combatS.blockType=v; cfg.set("combatBlockType",v) end 
-})
-
-sec_015:Slider({ Title = "Detection Range", Value = {Min=5,Max=50,Default=combatS.detectionRange}, Step = 1, Callback=function(v) combatS.detectionRange=v; cfg.set("combatDetectRange",v) end 
-})
-
-
-
-sec_015:Slider({ Title = "Block Delay (s)", Value = {Min=0,Max=0.5,Default=combatS.blockDelay}, Step = 0.01, Callback=function(v) combatS.blockDelay=v; cfg.set("combatBlockDelay",v) end 
-})
-
-sec_015:Toggle({ Title = "Double Block Tech", Default = combatS.doubleBlock, Callback=function(on) combatS.doubleBlock=on; cfg.set("combatDoubleBlock",on) end, Type = "Checkbox"})
-
-sec_015:Toggle({ Title = "Anti-Bait", Default = combatS.antiBait, Callback=function(on) combatS.antiBait=on; cfg.set("combatAntiBait",on) end, Type = "Checkbox"})
-
-sec_015:Slider({ Title = "Block Miss Chance %", Value = {Min=0,Max=100,Default=combatS.abMissChance}, Step = 1, Callback=function(v) combatS.abMissChance=v; cfg.set("combatABMiss",v) end 
-})
-
-local sec_016 = tabSurSen:Section({ Title = "Auto Punch", Opened = true })
-
-sec_016:Toggle({ Title = "Auto Punch", Default = combatS.autoPunchOn, Callback=function(on) combatS.autoPunchOn=on; cfg.set("combatAutoPunch",on) end, Type = "Checkbox"})
-
-local sec_017 = tabSurSen:Section({ Title = "HDT (Hitbox Dragging)", Opened = true })
-
-sec_017:Paragraph({ Title = "How HDT works", Content = "Activates the moment you block (detected via block animation). Drags you toward the nearest killer at high speed. Uses 180 turn only (straight drag)." })
-
-sec_017:Toggle({ Title = "Enable HDT", Default = combatS.hdtEnabled, Callback=function(on) combatS.hdtEnabled=on; cfg.set("combatHDT",on) end, Type = "Checkbox"})
-
-sec_017:Slider({ Title = "HDT Speed", Value = {Min=1,Max=30,Default=combatS.hdtSpeed}, Step = 0.5, Callback=function(v) combatS.hdtSpeed=v; cfg.set("combatHDTSpeed",v) end 
-})
-
-sec_017:Slider({ Title = "HDT Delay (s)", Value = {Min=0,Max=0.5,Default=combatS.hdtDelay}, Step = 0.01, Callback=function(v) combatS.hdtDelay=v; cfg.set("combatHDTDelay",v) end 
-})
-
-sec_017:Slider({ Title = "HDT Miss Chance %", Value = {Min=0,Max=100,Default=combatS.hdtMissChance}, Step = 1, Callback=function(v) combatS.hdtMissChance=v; cfg.set("combatHDTMiss",v) end 
-})
-
-local sec_018 = tabSurSen:Section({ Title = "Vision", Opened = true })
-
-sec_018:Toggle({ Title = "Detection Circles", Default = combatS.killerCircles, Callback=function(on) 
-        combatS.killerCircles=on; cfg.set("combatCircles",on)
-        if on then combatStartLoops() else combatUpdateCircles() end
-    end, Type = "Checkbox"})
-
-sec_018:Toggle({ Title = "Facing Check", Default = combatS.facingCheck, Callback=function(on) combatS.facingCheck=on; cfg.set("combatFacingCheck",on) end, Type = "Checkbox"})
-
-sec_018:Toggle({ Title = "Facing Visual", Default = combatS.facingVisual, Callback=function(on)
-        combatS.facingVisual=on; cfg.set("combatFacingVis",on)
-        if on then combatStartLoops() end
-    end, Type = "Checkbox"})
-
-sec_018:Slider({ Title = "Facing Visual Size", Value = {Min=1,Max=10,Default=combatS.facingVisRadius}, Step = 0.5, Callback=function(v)
-        combatS.facingVisRadius=v; cfg.set("combatFacingVisRadius",v)
-        for _, vis in pairs(combatFacingVisuals) do
-            if vis and vis.Parent then
-                vis.Radius = v
-                local adornee = vis.Adornee
-                if adornee then
-                    vis.CFrame = CFrame.new(0, -(adornee.Size.Y / 2 + 0.04), -v) * CFrame.Angles(math.rad(90), 0, 0)
-                end
-            end
-        end
-    end
-})
-
-local sec_019 = tabSurSen:Section({ Title = "Character Lock", Opened = true })
-
-sec_019:Toggle({ Title = "Lock On Punch", Default = combatS.charLockOn, Callback=function(on) combatS.charLockOn=on; cfg.set("combatCharLock",on) end, Type = "Checkbox"})
-
-sec_019:Slider({ Title = "Lock Max Distance", Value = {Min=5,Max=100,Default=combatS.lockMaxDist}, Step = 5, Callback=function(v) combatS.lockMaxDist=v; cfg.set("combatLockMaxDist",v) end 
-})
-
-sec_019:Slider({ Title = "Prediction", Value = {Min=0,Max=15,Default=combatS.predictionVal}, Step = 0.5, Callback=function(v) combatS.predictionVal=v; cfg.set("combatPrediction",v) end 
-})
-
--- End of Guest1337 Combat Section
 
 ------------------------------------------------------------------------
 ------------------------------------------------------------------------
@@ -2087,88 +1401,18 @@ do
         chanceBodyGyro.CFrame = CFrame.lookAt(chanceHRP.Position, aimPos)
     end)
 
-    sec_020:Paragraph({ Title = "How it works", Content = "Aims your HRP toward the nearest killer using a BodyGyro. Velocity mode predicts where the killer will be based on their current speed." })
-    sec_020:Toggle({ Title = "Enable Aimbot", Default = false, Callback=function(v) chanceAimEnabled=v end, Type = "Checkbox"})
-    sec_020:Dropdown({ Title = "Prediction Mode", Values = {"Velocity","Ping","Look","LookPing"}, Default = "Velocity", Callback=function(v) chancePredMode=v end })
-    sec_020:Input({ Title = "Prediction Value", Placeholder = "0.5", Callback=function(v) local n=tonumber(v); if n then chancePredValue=n end end })
-    sec_020:Slider({ Title = "Smooth Speed", Value = {Min=1,Max=30,Default=14}, Step = 1, Callback=function(v) chanceSmoothSpeed=v end })
-    sec_020:Toggle({ Title = "Height-Aware Aim", Default = true, Callback=function(v) chanceHeightAim=v end, Type = "Checkbox"})
-    sec_020:Dropdown({ Title = "Aim Behavior", Values = {"Normal","360"}, Default = "Normal", Callback=function(v) chanceAimBehavior=v end })
-    sec_020:Input({ Title = "Spin Duration", Placeholder = "0.5", Callback=function(v) local n=tonumber(v); if n then chanceSpinDur=n end end })
-    sec_020:Toggle({ Title = "Anti Bait", Default = true, Callback=function(v) chanceAntiBait=v end, Type = "Checkbox"})
-    sec_020:Toggle({ Title = "Hold-to-Aim", Default = true, Callback=function(v) chanceHoldToAim=v end, Type = "Checkbox"})
-    sec_020:Dropdown({ Title = "Aim Key", Values = {"Q","E","R","T","F","G","X","C","V"}, Default = "Q", Callback=function(v) chanceAimKey=Enum.KeyCode[v] end })
-    sec_020:Toggle({ Title = "Message When Aim", Default = false, Callback=function(v) chanceMsgOnAim=v end, Type = "Checkbox"})
-    sec_020:Input({ Title = "Message Text", Placeholder = "...", Callback=function(v) chanceMsgText=v end })
-end
-
-------------------------------------------------------------------------
-------------------------------------------------------------------------
--- TAB: TWOTIME
-------------------------------------------------------------------------
-------------------------------------------------------------------------
--- TwoTime Backstab
-do
-    local sec_021 = tabTwoTime:Section({ Title = "TwoTime Backstab", Opened = true })
-
-    local BS_BACKSTAB_THRESHOLD_COS = math.cos(math.rad(70))
-    local BS_DEFAULT_PROXIMITY      = 8
-    local BS_COOLDOWN               = 5.0
-
-    local bsEnabled         = false
-    local bsDaggerEnabled   = false
-    local bsBaseProximity   = BS_DEFAULT_PROXIMITY
-    local bsLastTrigger     = 0
-
-    local function bsGetChar() return lp.Character or lp.CharacterAdded:Wait() end
-    local function bsGetDaggerButton()
-        local pg=lp:FindFirstChild("PlayerGui"); if not pg then return nil end
-        local mainUI=pg:FindFirstChild("MainUI"); if not mainUI then return nil end
-        local container=mainUI:FindFirstChild("AbilityContainer"); if not container then return nil end
-        return container:FindFirstChild("Dagger")
-    end
-    local function bsGetKillersFolder()
-        local pf=svc.WS:FindFirstChild("Players"); if not pf then return nil end
-        return pf:FindFirstChild("Killers")
-    end
-    local function bsIsValidKiller(model)
-        if not model then return false end
-        local hrp=model:FindFirstChild("HumanoidRootPart"); local hum=model:FindFirstChildWhichIsA("Humanoid")
-        return hrp and hum and hum.Health and hum.Health>0
-    end
-    local function bsTryActivateButton(btn)
-        if not btn then return false end
-        pcall(function() if btn.Activate then btn:Activate() end end)
-        return true
-    end
-
-    task.spawn(function()
-        while true do
-            task.wait(0.05)
-            if not bsEnabled then continue end
-            local kf=bsGetKillersFolder(); if not kf then continue end
-            local char=bsGetChar(); local hrp=char and char:FindFirstChild("HumanoidRootPart"); if not hrp then continue end
-            for _,killer in pairs(kf:GetChildren()) do
-                if not bsIsValidKiller(killer) then continue end
-                local khrp=killer:FindFirstChild("HumanoidRootPart")
-                local dist=(khrp.Position-hrp.Position).Magnitude
-                if dist > bsBaseProximity then continue end
-                local toKiller=(khrp.Position-hrp.Position).Unit
-                local dot=toKiller:Dot(khrp.CFrame.LookVector)
-                if dot>BS_BACKSTAB_THRESHOLD_COS and os.clock()-bsLastTrigger>=BS_COOLDOWN then
-                    bsLastTrigger=os.clock()
-                    hrp.CFrame=CFrame.lookAt(hrp.Position,Vector3.new(khrp.Position.X,hrp.Position.Y,khrp.Position.Z))
-                    if bsDaggerEnabled then bsTryActivateButton(bsGetDaggerButton()) end
-                    break
-                end
-            end
-        end
-    end)
-
-    sec_021:Paragraph({ Title = "How it works", Content = "Detects when a killer is facing away within range and snaps your HRP to face them, optionally using dagger." })
-    sec_021:Toggle({ Title = "Enabled", Default = false, Callback=function(v) bsEnabled=v end, Type = "Checkbox"})
-    sec_021:Toggle({ Title = "Auto Use Dagger", Default = false, Callback=function(v) bsDaggerEnabled=v end, Type = "Checkbox"})
-    sec_021:Slider({ Title = "Detection Range", Value = {Min=1,Max=32,Default=BS_DEFAULT_PROXIMITY}, Step = 1, Callback=function(v) bsBaseProximity=v end })
+    sec_020:Toggle({ Title = "Enable Aimbot", Flag = "chanceAimOn", Default = false, Callback=function(v) chanceAimEnabled=v end, Type = "Checkbox"})
+    sec_020:Dropdown({ Title = "Prediction Mode", Flag = "chancePredMode", Values = {"Velocity","Ping","Look","LookPing"}, Default = "Velocity", Callback=function(v) chancePredMode=v end })
+    sec_020:Input({ Title = "Prediction Value", Flag = "chancePredVal", Placeholder = "0.5", Callback=function(v) local n=tonumber(v); if n then chancePredValue=n end end })
+    sec_020:Slider({ Title = "Smooth Speed", Flag = "chanceSmoothSpd", Value = {Min=1,Max=30,Default=14}, Step = 1, Callback=function(v) chanceSmoothSpeed=v end })
+    sec_020:Toggle({ Title = "Height-Aware Aim", Flag = "chanceHeightAim", Default = true, Callback=function(v) chanceHeightAim=v end, Type = "Checkbox"})
+    sec_020:Dropdown({ Title = "Aim Behavior", Flag = "chanceAimBehav", Values = {"Normal","360"}, Default = "Normal", Callback=function(v) chanceAimBehavior=v end })
+    sec_020:Input({ Title = "Spin Duration", Flag = "chanceSpinDur", Placeholder = "0.5", Callback=function(v) local n=tonumber(v); if n then chanceSpinDur=n end end })
+    sec_020:Toggle({ Title = "Anti Bait", Flag = "chanceAntiBait", Default = true, Callback=function(v) chanceAntiBait=v end, Type = "Checkbox"})
+    sec_020:Toggle({ Title = "Hold-to-Aim", Flag = "chanceHoldAim", Default = true, Callback=function(v) chanceHoldToAim=v end, Type = "Checkbox"})
+    sec_020:Dropdown({ Title = "Aim Key", Flag = "chanceAimKey", Values = {"Q","E","R","T","F","G","X","C","V"}, Default = "Q", Callback=function(v) chanceAimKey=Enum.KeyCode[v] end })
+    sec_020:Toggle({ Title = "Message When Aim", Flag = "chanceMsgOnAim", Default = false, Callback=function(v) chanceMsgOnAim=v end, Type = "Checkbox"})
+    sec_020:Input({ Title = "Message Text", Flag = "chanceMsgText", Placeholder = "...", Callback=function(v) chanceMsgText=v end })
 end
 
 ------------------------------------------------------------------------
@@ -2180,7 +1424,6 @@ local tabVeeronica = win:Tab({ Title = "Veeronica", Icon = "zap" })
 
 local sec_022 = tabVeeronica:Section({ Title = "Auto Trick", Opened = true })
 
-sec_022:Paragraph({ Title = "How it works", Content = "Monitors Veeronica's Behavior folder for Highlight instances that switch Adornee to your character. The moment that happens it automatically fires the SprintingButton press so the trick executes instantly." })
 
 do
     local atEnabled = false
@@ -2257,7 +1500,7 @@ do
     end
 
     sec_022:Toggle({
-        Title = "Auto Trick", Default = false, Callback = function(on)
+        Title = "Auto Trick", Flag = "veeeAutoTrick", Default = false, Callback = function(on)
             atEnabled = on
             if on then
                 if not atBehaviorFolder then local ok, f = pcall(atGetBehaviorFolder); if ok and f then atBehaviorFolder = f end end
@@ -2298,7 +1541,7 @@ do
 
     local sk8_chargeAnimIds = { "117058860640843" }
     local sk8_DASH_SPEED = 60
-    local sk8_controlEnabled = cfg.get("sk8ControlEnabled", true)
+    local sk8_controlEnabled = true
     local sk8_controlActive = false
     local sk8_overrideConn = nil
     local sk8_savedHumState = {}
@@ -2348,7 +1591,13 @@ do
         if sk8_overrideConn then pcall(function() sk8_overrideConn:Disconnect() end); sk8_overrideConn = nil end
         sk8_setShiftlock(false)
         local hum = sk8_getHumanoid()
-        if hum then pcall(function() sk8_restoreHumState(hum); hum:Move(Vector3.new(0,0,0)) end) end
+        if hum then
+            pcall(function()
+                sk8_restoreHumState(hum)
+                hum.AutoRotate = true  -- always force-restore rotation regardless of saved state
+                hum:Move(Vector3.new(0,0,0))
+            end)
+        end
     end
     local function sk8_detectChargeAnim()
         local hum = sk8_getHumanoid(); if not hum then return false end
@@ -2377,11 +1626,72 @@ do
     end)
 
     sec_023:Toggle({
-        Title = "Enable SK8 Control", Default = sk8_controlEnabled, Callback = function(on)
-            sk8_controlEnabled = on; cfg.set("sk8ControlEnabled", on)
+        Title = "Enable SK8 Control", Default = sk8_controlEnabled, Flag = "sk8ControlEnabled", Callback = function(on)
+            sk8_controlEnabled = on
             if not on and sk8_controlActive then sk8_stopOverride() end
         end, Type = "Checkbox"})
-    sec_023:Paragraph({ Title = "How it works", Content = "Detects when Veeronica's charge animation is playing and takes over movement: forces 60 walkspeed, locks direction forward, and enables shiftlock." })
+end
+
+------------------------------------------------------------------------
+-- FAST SPRAY (Veeronica)
+------------------------------------------------------------------------
+local sec_vee_spray = tabVeeronica:Section({ Title = "Fast Spray", Opened = true })
+
+do
+    local SPRAY_ANIM_ID   = "96618767275101"  -- CanSpray animation
+    local vee_fastSpray   = false
+    local sprayPhase      = 0
+    local sprayBaseCF     = nil
+
+    local function isSprayPainting()
+        local char = lp.Character; if not char then return false end
+        local hum  = char:FindFirstChildOfClass("Humanoid"); if not hum then return false end
+        for _, track in ipairs(hum:GetPlayingAnimationTracks()) do
+            local ok, id = pcall(function()
+                return tostring(track.Animation and track.Animation.AnimationId or ""):match("%d+")
+            end)
+            if ok and id == SPRAY_ANIM_ID then return true end
+        end
+        return false
+    end
+
+    svc.Run.RenderStepped:Connect(function(dt)
+        if not vee_fastSpray then
+            sprayPhase  = 0
+            sprayBaseCF = nil
+            return
+        end
+        if not isSprayPainting() then
+            sprayPhase  = 0
+            sprayBaseCF = nil
+            return
+        end
+        local char = lp.Character
+        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+
+        -- Re-anchor near sine zero-crossing to prevent drift
+        if not sprayBaseCF or math.abs(math.sin(sprayPhase)) < 0.05 then
+            sprayBaseCF = hrp.CFrame
+        end
+
+        sprayPhase = sprayPhase + dt * (math.pi * 4.5)   -- ~1.5 full cycles/sec
+        local offset = math.sin(sprayPhase) * 2           -- ±2 studs side-to-side
+        hrp.CFrame = sprayBaseCF + (sprayBaseCF.LookVector * (-offset))
+    end)
+
+    lp.CharacterAdded:Connect(function()
+        sprayPhase  = 0
+        sprayBaseCF = nil
+    end)
+
+    sec_vee_spray:Toggle({
+        Title = "Enable Fast Spray", Type = "Checkbox", Flag = "veeeFastSpray", Default = vee_fastSpray,
+        Callback = function(on)
+            vee_fastSpray = on
+            if not on then sprayPhase = 0; sprayBaseCF = nil end
+        end
+    })
 end
 
 ------------------------------------------------------------------------
@@ -2604,26 +1914,24 @@ do
     end)
 
     local sec_024 = tabJaneDoe:Section({ Title = "Crystal Auto-Fire", Opened = true })
-    sec_024:Paragraph({ Title = "How it works", Content = "Patches Jane Doe's RemoteFunction so every crystal throw auto-fires on a loop with silent aim." })
-    sec_024:Toggle({ Title = "Enable Jane Doe Aimbot", Default = false,
+    sec_024:Toggle({ Title = "Enable Jane Doe Aimbot", Flag = "jdEnabled", Default = false,
         Callback=function(on)
             jd_enabled=on; local actor=jd_getLocalActor()
             if on and not jd_patched and actor then jd_applyPatch(actor) end
         end, Type = "Checkbox"})
-    sec_024:Toggle({ Title = "Aimbot (Silent Aim)", Default = false,
+    sec_024:Toggle({ Title = "Aimbot (Silent Aim)", Flag = "jdSilentAim", Default = false,
         Callback=function(on)
             jd_aimbotOn=on
             local actor=jd_getLocalActor(); if on and not jd_patched and actor then jd_applyPatch(actor) end
         end, Type = "Checkbox"})
-    sec_024:Slider({ Title = "Aim Offset (Y)", Value = {Min=-5.0,Max=5.0,Default=jd_AIM_OFFSET}, Step = 0.1, Callback=function(v) jd_AIM_OFFSET=v end })
-    sec_024:Slider({ Title = "Prediction", Value = {Min=0.0,Max=1.0,Default=jd_PREDICTION}, Step = 0.01, Callback=function(v) jd_PREDICTION=v end })
-    sec_024:Slider({ Title = "Hold Duration (s)", Value = {Min=0.3,Max=2.0,Default=jd_HOLD_DURATION}, Step = 0.1, Callback=function(v) jd_HOLD_DURATION=v end })
+    sec_024:Slider({ Title = "Aim Offset (Y)", Flag = "jdAimOffset", Value = {Min=-5.0,Max=5.0,Default=jd_AIM_OFFSET}, Step = 0.1, Callback=function(v) jd_AIM_OFFSET=v end })
+    sec_024:Slider({ Title = "Prediction", Flag = "jdPrediction", Value = {Min=0.0,Max=1.0,Default=jd_PREDICTION}, Step = 0.01, Callback=function(v) jd_PREDICTION=v end })
+    sec_024:Slider({ Title = "Hold Duration (s)", Flag = "jdHoldDur", Value = {Min=0.3,Max=2.0,Default=jd_HOLD_DURATION}, Step = 0.1, Callback=function(v) jd_HOLD_DURATION=v end })
 
     local sec_025 = tabJaneDoe:Section({ Title = "Axe Lock-On", Opened = true })
-    sec_025:Paragraph({ Title = "How it works", Content = "Detects when you use the Axe ability and locks your character to face the nearest killer for 1.7 seconds." })
-    sec_025:Toggle({ Title = "Enable Axe Lock-On", Default = false,
+    sec_025:Toggle({ Title = "Enable Axe Lock-On", Flag = "jdAxeEnabled", Default = false,
         Callback=function(on) jd_axeEnabled=on end, Type = "Checkbox"})
-    sec_025:Slider({ Title = "Lock Duration (s)", Value = {Min=0.5,Max=3.0,Default=jd_AXE_LOCK_DURATION}, Step = 0.1, Callback=function(v) jd_AXE_LOCK_DURATION=v end })
+    sec_025:Slider({ Title = "Lock Duration (s)", Flag = "jdAxeLockDur", Value = {Min=0.5,Max=3.0,Default=jd_AXE_LOCK_DURATION}, Step = 0.1, Callback=function(v) jd_AXE_LOCK_DURATION=v end })
 
     local sec_026 = tabJaneDoe:Section({ Title = "Control", Opened = true })
     sec_026:Button({ Title = "Unload Jane Doe", Callback=function()
@@ -2642,14 +1950,10 @@ local tabDusekkar = win:Tab({ Title = "Dusekkar", Icon = "zap" })
 do
     local sec_027 = tabDusekkar:Section({ Title = "PlasmaBeam Silent Aim", Opened = true })
 
-    sec_027:Paragraph({
-        Title   = "How it works",
-        Content = "Dual hook system: (1) RemoteFunction GetMousePosition callback for mouse-based aiming, (2) UseActorAbility namecall hook with PlasmaBeam buffer check for direct CFrame injection.",
-    })
 
-    local plasma_enabled    = cfg.get("plasmaEnabled",    false)
-    local plasma_aimOffset  = cfg.get("plasmaAimOffset",  0.0)
-    local plasma_prediction = cfg.get("plasmaPrediction", 0.12)
+    local plasma_enabled    = false
+    local plasma_aimOffset  = 0.0
+    local plasma_prediction = 0.12
     
     -- RemoteFunction callback vars
     local plasma_oldCB     = nil
@@ -2701,7 +2005,7 @@ do
                 :WaitForChild("Network", 10)
                 :WaitForChild("RemoteFunction", 10)
         end)
-        if not ok or not rf then warn("[V1PRWARE] Dusekkar: RemoteFunction not found"); return end
+        if not ok or not rf then warn("[SAKIWARE] Dusekkar: RemoteFunction not found"); return end
         plasma_rf = rf
         plasma_oldCB = getcallbackvalue(rf, "OnClientInvoke")
         rf.OnClientInvoke = function(reqName, data, ...)
@@ -2731,15 +2035,15 @@ do
     lp.CharacterAdded:Connect(function() plasma_motionData = {} end)
 
     sec_027:Toggle({
-        Title = "Enable PlasmaBeam Aim", Default = plasma_enabled, Type = "Checkbox",
-        Callback = function(on) plasma_enabled = on; cfg.set("plasmaEnabled", on) end })
+        Title = "Enable PlasmaBeam Aim", Default = plasma_enabled, Type = "Checkbox", Flag = "plasmaEnabled",
+        Callback = function(on) plasma_enabled = on end })
     sec_027:Slider({
-        Title = "Prediction (s)", Value = {Min=0.0,Max=0.5,Default=plasma_prediction}, Step = 0.01,
-        Callback = function(v) plasma_prediction = v; cfg.set("plasmaPrediction", v) end
+        Title = "Prediction (s)", Flag = "plasmaPrediction", Value = {Min=0.0,Max=0.5,Default=plasma_prediction}, Step = 0.01,
+        Callback = function(v) plasma_prediction = v end
     })
     sec_027:Slider({
-        Title = "Aim Height Offset", Value = {Min=-5.0, Max=5.0, Default=plasma_aimOffset}, Step = 0.1,
-        Callback = function(v) plasma_aimOffset = v; cfg.set("plasmaAimOffset", v) end })
+        Title = "Aim Height Offset", Flag = "plasmaAimOffset", Value = {Min=-5.0, Max=5.0, Default=plasma_aimOffset}, Step = 0.1,
+        Callback = function(v) plasma_aimOffset = v end })
 
     local sec_028 = tabDusekkar:Section({ Title = "Control", Opened = true })
     sec_028:Button({
@@ -2759,14 +2063,10 @@ local tabNoli = win:Tab({ Title = "Noli", Icon = "wind" })
 do
     local sec_029 = tabNoli:Section({ Title = "Nova Silent Aim", Opened = true })
 
-    sec_029:Paragraph({
-        Title   = "How it works",
-        Content = "Hooks the RemoteFunction's GetMousePosition callback. When Nova fires, the server asks the client where the mouse is — we return the nearest survivor's predicted position instead.",
-    })
 
-    local nova_enabled    = cfg.get("novaEnabled",    false)
-    local nova_aimOffset  = cfg.get("novaAimOffset",  0.0)
-    local nova_prediction = cfg.get("novaPrediction", 0.12)
+    local nova_enabled    = false
+    local nova_aimOffset  = 0.0
+    local nova_prediction = 0.12
     local nova_oldCB      = nil
     local nova_rf         = nil
 
@@ -2816,7 +2116,7 @@ do
                 :WaitForChild("Network", 10)
                 :WaitForChild("RemoteFunction", 10)
         end)
-        if not ok or not rf then warn("[V1PRWARE] Noli: RemoteFunction not found"); return end
+        if not ok or not rf then warn("[SAKIWARE] Noli: RemoteFunction not found"); return end
         nova_rf = rf
         nova_oldCB = getcallbackvalue(rf, "OnClientInvoke")
         rf.OnClientInvoke = function(reqName, data, ...)
@@ -2846,15 +2146,15 @@ do
     lp.CharacterAdded:Connect(function() nova_motionData = {} end)
 
     sec_029:Toggle({
-        Title = "Enable Nova Aim", Default = nova_enabled, Type = "Checkbox",
-        Callback = function(on) nova_enabled = on; cfg.set("novaEnabled", on) end })
+        Title = "Enable Nova Aim", Default = nova_enabled, Type = "Checkbox", Flag = "novaEnabled",
+        Callback = function(on) nova_enabled = on end })
     sec_029:Slider({
-        Title = "Prediction (s)", Value = {Min=0.0,Max=0.5,Default=nova_prediction}, Step = 0.01,
-        Callback = function(v) nova_prediction = v; cfg.set("novaPrediction", v) end
+        Title = "Prediction (s)", Flag = "novaPrediction", Value = {Min=0.0,Max=0.5,Default=nova_prediction}, Step = 0.01,
+        Callback = function(v) nova_prediction = v end
     })
     sec_029:Slider({
-        Title = "Aim Height Offset", Value = {Min=-5.0, Max=5.0, Default=nova_aimOffset}, Step = 0.1,
-        Callback = function(v) nova_aimOffset = v; cfg.set("novaAimOffset", v) end })
+        Title = "Aim Height Offset", Flag = "novaAimOffset", Value = {Min=-5.0, Max=5.0, Default=nova_aimOffset}, Step = 0.1,
+        Callback = function(v) nova_aimOffset = v end })
 
     local sec_029b = tabNoli:Section({ Title = "Control", Opened = true })
     sec_029b:Button({
@@ -2864,8 +2164,1006 @@ do
     })
 end
 
+-- TAB: AI PLAY (Killer-side)
 ------------------------------------------------------------------------
--- Interface Tab
+------------------------------------------------------------------------
+local tabAI = win:Tab({ Title = "AI", Icon = "cpu" })
+local secAIMain = tabAI:Section({ Title = "Killer AI", Opened = true })
+
+secAIMain:Paragraph({
+    Title   = "What this does",
+    Content = "Pathfinds to the nearest survivor using PathfindingService. Killer-only — switch to killer before enabling.",
+})
+
+local ai_enabled      = false
+local ai_resetOnDeath = true
+local ai_thread       = nil
+local PathfindingService = game:GetService("PathfindingService")
+
+-----------------------------------------------------------------------
+-- KILLER AI — Config
+-----------------------------------------------------------------------
+local aiCfg = {
+    slashRange    = 15,
+    slashCooldown = 2,
+    pathInterval  = 0.6,
+    predScale     = 0.08,
+}
+
+-----------------------------------------------------------------------
+-- KILLER AI — State
+-----------------------------------------------------------------------
+local aiState = {
+    target      = nil,
+    lastSlash   = 0,
+    lastPath    = 0,
+    waypoints   = {},
+    wpIndex     = 1,
+    moveConn    = nil,
+    lastMovePos = nil,
+    stuckCheck  = { pos = nil, time = 0 },  -- stuck detection
+}
+
+-----------------------------------------------------------------------
+-- KILLER AI — Helpers
+-----------------------------------------------------------------------
+local function aiGetSurvivorsFolder()
+    local p = svc.WS:FindFirstChild("Players")
+    return p and p:FindFirstChild("Survivors")
+end
+
+local function aiPredictPosition(hrp, t)
+    local vel = hrp.AssemblyLinearVelocity or Vector3.zero
+    return hrp.Position + vel * t
+end
+
+local function aiGetNearest()
+    local char = lp.Character; if not char then return end
+    local myHRP = char:FindFirstChild("HumanoidRootPart"); if not myHRP then return end
+    local sf = aiGetSurvivorsFolder(); if not sf then return end
+    local best, dist = nil, math.huge
+    for _, m in ipairs(sf:GetChildren()) do
+        local h = m:FindFirstChildOfClass("Humanoid")
+        local r = m:FindFirstChild("HumanoidRootPart")
+        if h and r and h.Health > 0 then
+            local d = (aiPredictPosition(r, aiCfg.predScale) - myHRP.Position).Magnitude
+            if d < dist then dist = d; best = {model = m, humanoid = h, root = r} end
+        end
+    end
+    return best
+end
+
+local function aiGetMyKillerName()
+    local ch = lp.Character; if not ch then return nil end
+    local kf = getTeamFolder("Killers"); if not kf then return nil end
+    if not ch:IsDescendantOf(kf) then return nil end
+    return ch.Name
+end
+
+local function aiFireSlash()
+    local re = hbGetRemote()
+    if not re then return end
+    local killerName = aiGetMyKillerName() or ""
+    local abilityName, bufStr
+    if killerName == "Noli" then
+        abilityName = "Stab"
+        bufStr = "\x03\x04\x00\x00\x00Stab"
+    elseif killerName == "c00lkidd" then
+        abilityName = "Punch"
+        bufStr = "\x03\x05\x00\x00\x00Punch"
+    else
+        -- Slasher, JohnDoe, 1x1x1x1, Nosferatu, Guest666, etc.
+        abilityName = "Slash"
+        bufStr = "\x03\x05\x00\x00\x00Slash"
+    end
+    local ok, buf = pcall(function()
+        return buffer.fromstring(bufStr)
+    end)
+    if ok and buf then
+        pcall(function() re:FireServer("UseActorAbility", { [1] = buf }) end)
+    end
+    pcall(function() re:FireServer(abilityName) end)
+end
+
+-----------------------------------------------------------------------
+-- KILLER AI — Movement Loop (NEVER STOPS)
+-----------------------------------------------------------------------
+local function aiStartMove()
+    if aiState.moveConn then aiState.moveConn:Disconnect() end
+
+    aiState.moveConn = svc.Run.Heartbeat:Connect(function()
+        if not ai_enabled then return end
+        local char = lp.Character; if not char then return end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hrp or not hum or hum.Health <= 0 then return end
+        if not aiState.target then return end
+        local targetHRP = aiState.target.root
+        if not targetHRP then return end
+
+        -- If very close, discard stale waypoints and track live position directly
+        local directDist = (targetHRP.Position - hrp.Position).Magnitude
+        if directDist <= 8 then
+            aiState.waypoints   = {}
+            aiState.wpIndex     = 1
+            aiState.lastMovePos = nil
+            hum:MoveTo(targetHRP.Position)
+            return
+        end
+
+        -- Follow waypoints
+        if aiState.wpIndex <= #aiState.waypoints then
+            local wp = aiState.waypoints[aiState.wpIndex]
+            if (hrp.Position - wp.Position).Magnitude < 5 then
+                aiState.wpIndex += 1
+            end
+            hum:MoveTo(wp.Position)
+            return
+        end
+
+        -- Direct chase with smooth lerp (ALWAYS ACTIVE, never stops)
+        aiState.lastMovePos = aiState.lastMovePos or hrp.Position
+        local targetPos = aiPredictPosition(targetHRP, aiCfg.predScale)
+        aiState.lastMovePos = aiState.lastMovePos:Lerp(targetPos, 0.15)
+        hum:MoveTo(aiState.lastMovePos)
+    end)
+end
+
+-----------------------------------------------------------------------
+-- KILLER AI — Main Loop (NEVER DIES)
+-----------------------------------------------------------------------
+local function aiKillerLoop()
+    aiStartMove()
+
+    while ai_enabled do
+        task.wait(0.1)
+        local char = lp.Character; if not char then continue end
+        local hrp = char:FindFirstChild("HumanoidRootPart"); if not hrp then continue end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hum or hum.Health <= 0 then
+            if ai_resetOnDeath then pcall(function() hum:ChangeState(Enum.HumanoidStateType.Dead) end) end
+            task.wait(3); continue
+        end
+
+        -- Stuck detection: if we haven't moved >2 studs in 1.5s, force repath
+        local now = tick()
+        if not aiState.stuckCheck.pos then
+            aiState.stuckCheck.pos  = hrp.Position
+            aiState.stuckCheck.time = now
+        elseif now - aiState.stuckCheck.time >= 1.5 then
+            local moved = (hrp.Position - aiState.stuckCheck.pos).Magnitude
+            if moved < 2 and (targetHRP.Position - hrp.Position).Magnitude > 8 then
+                -- Stuck — clear waypoints to force a fresh path next tick
+                aiState.waypoints = {}
+                aiState.wpIndex   = 1
+                aiState.lastPath  = 0  -- force immediate repath
+            end
+            aiState.stuckCheck.pos  = hrp.Position
+            aiState.stuckCheck.time = now
+        end
+
+        -- Retarget only if current target is dead/gone
+        if not aiState.target or not aiState.target.root
+            or aiState.target.humanoid.Health <= 0 then
+            aiState.target    = aiGetNearest()
+            aiState.waypoints = {}
+            aiState.wpIndex   = 1
+        end
+
+        if not aiState.target then continue end
+        local targetHRP = aiState.target.root
+
+        -- Attack
+        local dist = (targetHRP.Position - hrp.Position).Magnitude
+        if dist <= aiCfg.slashRange then
+            if tick() - aiState.lastSlash > aiCfg.slashCooldown then
+                aiFireSlash()
+                aiState.lastSlash = tick()
+            end
+        end
+
+        -- Pathfinding (safe, refreshes every interval)
+        if tick() - aiState.lastPath > aiCfg.pathInterval then
+            aiState.lastPath = tick()
+            local path = PathfindingService:CreatePath({
+                AgentRadius = 2, AgentHeight = 5, AgentCanJump = true
+            })
+            local ok = pcall(function()
+                path:ComputeAsync(hrp.Position, aiPredictPosition(targetHRP, aiCfg.predScale))
+            end)
+            if ok and path.Status == Enum.PathStatus.Success then
+                aiState.waypoints = path:GetWaypoints()
+                aiState.wpIndex   = 1
+            else
+                aiState.waypoints = {} -- fallback: direct chase via Heartbeat
+            end
+        end
+    end
+
+    -- Cleanup on stop
+    if aiState.moveConn then aiState.moveConn:Disconnect(); aiState.moveConn = nil end
+end
+
+secAIMain:Toggle({
+    Title = "Enable Killer AI Farm", Type = "Checkbox", Flag = "aiKillerEnabled", Default = ai_enabled,
+    Callback = function(on)
+        ai_enabled = on
+        if on then
+            if ai_thread then task.cancel(ai_thread) end
+            aiState.target      = nil
+            aiState.waypoints   = {}
+            aiState.wpIndex     = 1
+            aiState.lastMovePos = nil
+            ai_thread = task.spawn(aiKillerLoop)
+        else
+            ai_enabled = false
+            if ai_thread then task.cancel(ai_thread); ai_thread = nil end
+            if aiState.moveConn then aiState.moveConn:Disconnect(); aiState.moveConn = nil end
+            aiState.target    = nil
+            aiState.waypoints = {}
+            aiState.wpIndex   = 1
+            local char = lp.Character
+            if char then
+                local hum = char:FindFirstChildOfClass("Humanoid")
+                if hum then hum:MoveTo(char.HumanoidRootPart.Position) end
+            end
+        end
+    end
+})
+
+secAIMain:Toggle({
+    Title = "Auto Reset on Death", Type = "Checkbox", Flag = "aiResetOnDeath", Default = ai_resetOnDeath,
+    Callback = function(on) ai_resetOnDeath = on end
+})
+
+local secAICtrl = tabAI:Section({ Title = "Control", Opened = true })
+secAICtrl:Button({
+    Title = "Stop AI", Callback = function()
+        ai_enabled = false
+        if ai_thread then task.cancel(ai_thread); ai_thread = nil end
+        if aiState.moveConn then aiState.moveConn:Disconnect(); aiState.moveConn = nil end
+        aiState.target    = nil
+        aiState.waypoints = {}
+        aiState.wpIndex   = 1
+    end
+})
+
+
+------------------------------------------------------------------------
+------------------------------------------------------------------------
+-- TAB: GUEST 1337
+------------------------------------------------------------------------
+------------------------------------------------------------------------
+local tabGuest1337 = win:Tab({ Title = "Guest 1337", Icon = "shield" })
+
+-- GUEST1337 — Auto Block & Combat
+------------------------------------------------------------------------
+local sec_015 = tabGuest1337:Section({ Title = "Auto Block & Combat", Opened = true })
+
+-- Settings
+local combatS = {
+    autoBlockOn = false,
+    blockType = "Block",
+    detectionRange = 18,
+    blockDelay = 0,
+    doubleBlock = true,
+    antiBait = false,
+    abMissChance = 0,
+    autoPunchOn = false,
+    hdtEnabled = false,
+    hdtSpeed = 12,
+    hdtDelay = 0,
+    hdtMissChance = 0,
+    killerCircles = false,
+    facingCheck = true,
+    facingVisual = false,
+    facingVisRadius = 3,
+    charLockOn = false,
+    lockMaxDist = 30,
+    lockDuration = 0.1,
+    predictionVal = 4,
+}
+
+local TRIGGER_SOUNDS = {
+    ["140242176732868"]=true,["136323728355613"]=true,
+    ["115026634746636"]=true,["84116622032112"]=true, ["108907358619313"]=true,["127793641088496"]=true,
+    ["86174610237192"]=true, ["95079963655241"]=true, ["101199185291628"]=true,["119942598489800"]=true,
+    ["84307400688050"]=true, ["105200830849301"]=true,["75330693422988"]=true,
+    ["82221759983649"]=true, ["81702359653578"]=true, ["85853080745515"]=true,
+    ["108610718831698"]=true,["112395455254818"]=true,["109431876587852"]=true,["12222216"]=true,
+    ["79980897195554"]=true, ["119583605486352"]=true,["71834552297085"]=true, ["116581754553533"]=true,
+    ["86833981571073"]=true, ["110372418055226"]=true,["105840448036441"]=true,["86494585504534"]=true,
+    ["80516583309685"]=true, ["131406927389838"]=true,["89004992452376"]=true, ["117231507259853"]=true,
+    ["101698569375359"]=true,["101553872555606"]=true,["140412278320643"]=true,["106300477136129"]=true,
+    ["117173212095661"]=true,["104910828105172"]=true,["140194172008986"]=true,["85544168523099"]=true,
+    ["114506382930939"]=true,["99829427721752"]=true, ["120059928759346"]=true,["104625283622511"]=true,
+    ["105316545074913"]=true,["126131675979001"]=true,["82336352305186"]=true, ["93366464803829"]=true,
+    ["84069821282466"]=true, ["128856426573270"]=true,["121954639447247"]=true,["128195973631079"]=true,
+    ["124903763333174"]=true,["94317217837143"]=true, ["98111231282218"]=true, ["119089145505438"]=true,
+    ["136728245733659"]=true,["107444859834748"]=true,["76959687420003"]=true,
+    ["72425554233832"]=true, ["96594507550917"]=true, ["139996647355899"]=true,["107345261604889"]=true,
+    ["127557531826290"]=true,["108651070773439"]=true,["74842815979546"]=true, ["124397369810639"]=true,
+    ["76467993976301"]=true, ["118493324723683"]=true,["78298577002481"]=true, ["116527305931161"]=true,
+    ["5148302439"]=true,     ["98675142200448"]=true, ["128367348686124"]=true,["71805956520207"]=true,
+    ["125213046326879"]=true,["103684883268194"]=true,["109246041199659"]=true,
+    ["80540530406270"]=true, ["139523195429581"]=true,["105204810054381"]=true,["114742322778642"]=true,
+    ["116468089135195"]=true,["112809109188560"]=true,
+}
+
+-- Block anim IDs for HDT detection
+local BLOCK_ANIMS = {
+    ["72722244508749"]=true,["96959123077498"]=true,["95802026624883"]=true,
+    ["100926346851492"]=true,["120748030255574"]=true,
+}
+
+local BAIT_KILLERS = {"John Doe","Slasher","c00lkidd","Jason","1x1x1x1","Noli","Sixer","Nosferatu"}
+local STRICT_FACING_DOT = 0.70
+local _cachedAnimator = nil
+
+local function combatIsFacing(myRoot, targetRoot, killerName)
+    if not combatS.facingCheck then return true end
+    if not myRoot or not targetRoot then return false end
+    local diff = myRoot.Position - targetRoot.Position
+    if diff.Magnitude < 0.01 then return true end
+    local dir = diff.Unit
+    local dot = targetRoot.CFrame.LookVector:Dot(dir)
+    local bait = false
+    if killerName then
+        for _, n in ipairs(BAIT_KILLERS) do
+            if killerName:find(n) then bait = true; break end
+        end
+    end
+    if bait then
+        local vel = Vector3.zero
+        pcall(function() vel = targetRoot.AssemblyLinearVelocity end)
+        if vel.Magnitude < 0.01 then pcall(function() vel = targetRoot.Velocity end) end
+        local side = math.abs(vel:Dot(targetRoot.CFrame.RightVector))
+        if side > 3 then return false end
+        return dot > STRICT_FACING_DOT + 0.05
+    end
+    return dot > STRICT_FACING_DOT
+end
+
+-- Helper functions
+local function combatGetKillersFolder()
+    local p = svc.WS:FindFirstChild("Players")
+    return p and p:FindFirstChild("Killers")
+end
+
+local function combatGetNearestKiller()
+    local char = lp.Character; if not char then return nil end
+    local myRoot = char:FindFirstChild("HumanoidRootPart"); if not myRoot then return nil end
+    local kf = combatGetKillersFolder(); if not kf then return nil end
+    local best, bestD = nil, math.huge
+    for _, k in pairs(kf:GetChildren()) do
+        local hrp = k:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            local d = (hrp.Position - myRoot.Position).Magnitude
+            if d < bestD then best, bestD = k, d end
+        end
+    end
+    return best
+end
+
+local function combatRollMiss(chance)
+    if chance <= 0 then return false end
+    if chance >= 100 then return true end
+    return math.random(1, 100) <= chance
+end
+
+local function combatFireAbility(abilityType)
+    local rem = hbGetRemote()
+    if not rem then return end
+    local buf
+    if abilityType == "Block" then
+        buf = buffer.fromstring("\x03\x05\x00\x00\x00Block")
+    elseif abilityType == "Punch" then
+        buf = buffer.fromstring("\x03\x05\x00\x00\x00Punch")
+    elseif abilityType == "Charge" then
+        buf = buffer.fromstring("\x03\x06\x00\x00\x00Charge")
+    elseif abilityType == "Clone" then
+        buf = buffer.fromstring("\x03\x05\x00\x00\x00Clone")
+    else
+        buf = buffer.fromstring("\x03\x05\x00\x00\x00Block")
+    end
+    pcall(function() rem:FireServer("UseActorAbility", {[1] = buf}) end)
+    pcall(function() rem:FireServer(abilityType) end)
+end
+
+-- Forward declaration so combatLockOnPunch can reference it before the full definition below
+local combatGetKillerHRP
+
+-- Flag that blocks the AI loop from touching AutoRotate while lock-on is active
+local _clpLocked = false
+
+-- Lock-On-Punch: lock to nearest killer immediately when punch fires, release after lockDuration
+local _clpActive = false
+local function combatLockOnPunch()
+    if not combatS.charLockOn then return end
+    if _clpActive then return end
+    _clpActive = true
+    _clpLocked = true
+
+    local char = lp.Character
+    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+    local hum  = char and char:FindFirstChildOfClass("Humanoid")
+    if not hrp or not hum then _clpActive = false; _clpLocked = false; return end
+    local killer = combatGetNearestKiller()
+    local khrp   = killer and combatGetKillerHRP(killer)
+    if not khrp then _clpActive = false; _clpLocked = false; return end
+
+    local oldAR = hum.AutoRotate
+    hum.AutoRotate = false
+
+    local bg = Instance.new("BodyGyro")
+    bg.MaxTorque = Vector3.new(0, 1e6, 0)
+    bg.P         = 1e5
+    bg.D         = 500
+    bg.CFrame    = CFrame.lookAt(hrp.Position, Vector3.new(khrp.Position.X, hrp.Position.Y, khrp.Position.Z))
+    bg.Parent    = hrp
+
+    local function doRestore()
+        -- Re-fetch hum in case character respawned during lock
+        local ch2  = lp.Character
+        local hum2 = ch2 and ch2:FindFirstChildOfClass("Humanoid")
+        if hum2 and hum2.Parent then hum2.AutoRotate = oldAR end
+        _clpActive = false
+        _clpLocked = false
+    end
+
+    local conn
+    conn = svc.Run.Heartbeat:Connect(function()
+        if not (hrp and hrp.Parent) or not (khrp and khrp.Parent) then
+            conn:Disconnect()
+            pcall(function() bg:Destroy() end)
+            doRestore()
+            return
+        end
+        -- Keep AutoRotate locked in case something else reset it
+        if hum and hum.Parent then hum.AutoRotate = false end
+        bg.CFrame = CFrame.lookAt(hrp.Position, Vector3.new(khrp.Position.X, hrp.Position.Y, khrp.Position.Z))
+    end)
+
+    task.delay(combatS.lockDuration, function()
+        conn:Disconnect()
+        pcall(function() bg:Destroy() end)
+        doRestore()
+    end)
+end
+
+-- Auto Block (Audio-based) — event-driven hook system
+local combatSoundHooks        = {}
+local combatSoundBlockedUntil = {}
+local combatLastBlockTime     = 0
+local BLOCK_CD                = 0.1
+
+local function combatExtractSoundId(sound)
+    if not sound then return nil end
+    return tostring(sound.SoundId):match("%d+")
+end
+
+local function combatTryBlockFromSound(sound, preId)
+    if not combatS.autoBlockOn then return end
+    if not sound or not sound:IsA("Sound") then return end
+
+    local id = preId or combatExtractSoundId(sound)
+    if not id or not TRIGGER_SOUNDS[id] then return end
+
+    local now = tick()
+    if now - combatLastBlockTime < BLOCK_CD then return end
+    if combatSoundBlockedUntil[sound] and now < combatSoundBlockedUntil[sound] then return end
+
+    local char = lp.Character; if not char then return end
+    local myRoot = char:FindFirstChild("HumanoidRootPart"); if not myRoot then return end
+
+    -- Resolve killer from the sound's parent part
+    local soundPart
+    if sound.Parent and sound.Parent:IsA("BasePart") then
+        soundPart = sound.Parent
+    elseif sound.Parent and sound.Parent:IsA("Attachment")
+        and sound.Parent.Parent and sound.Parent.Parent:IsA("BasePart") then
+        soundPart = sound.Parent.Parent
+    else
+        soundPart = sound.Parent and sound.Parent:FindFirstChildWhichIsA("BasePart", true)
+    end
+
+    local killerModel = nil
+    if soundPart then
+        local model = soundPart:FindFirstAncestorOfClass("Model")
+        if model and model:FindFirstChildOfClass("Humanoid") then
+            local kf = combatGetKillersFolder()
+            if kf and model:IsDescendantOf(kf) then
+                killerModel = model
+            end
+        end
+    end
+
+    -- Fallback: nearest killer in range
+    if not killerModel then
+        killerModel = combatGetNearestKiller()
+    end
+    if not killerModel then return end
+
+    local hrp = killerModel:FindFirstChild("HumanoidRootPart"); if not hrp then return end
+    local dist = (hrp.Position - myRoot.Position).Magnitude
+    if dist > combatS.detectionRange then return end
+
+    if not combatIsFacing(myRoot, hrp, killerModel.Name) then return end
+
+    if combatS.antiBait then
+        local vel = Vector3.zero
+        pcall(function() vel = hrp.AssemblyLinearVelocity end)
+        if vel.Magnitude < 0.1 then pcall(function() vel = hrp.Velocity end) end
+        local toUs = myRoot.Position - hrp.Position
+        if toUs.Magnitude > 0.1 then
+            if vel:Dot(toUs.Unit) < -3 then return end
+        end
+        if dist > 13 then return end
+        if dist > 6 then
+            local sideSpeed = math.abs(vel:Dot(hrp.CFrame.RightVector))
+            if sideSpeed > 6 and vel:Dot(toUs.Unit) < 0 then return end
+        end
+    end
+
+    if combatRollMiss(combatS.abMissChance) then return end
+    combatLastBlockTime = now
+    combatSoundBlockedUntil[sound] = now + 0.3
+
+    local function doFire()
+        if combatS.blockType == "Block" then
+            combatFireAbility("Block")
+            if combatS.doubleBlock then combatFireAbility("Punch"); combatLockOnPunch() end
+        elseif combatS.blockType == "Charge" then
+            combatFireAbility("Charge")
+        elseif combatS.blockType == "7n7 Clone" then
+            combatFireAbility("Clone")
+        end
+    end
+
+    if combatS.blockDelay > 0 then
+        task.delay(combatS.blockDelay, doFire)
+    else
+        doFire()
+    end
+end
+
+local function combatHookSound(sound)
+    if not sound or not sound:IsA("Sound") or combatSoundHooks[sound] then return end
+    local preId = combatExtractSoundId(sound)
+    if not preId then return end
+
+    local playedConn = sound.Played:Connect(function()
+        if combatS.autoBlockOn then task.spawn(combatTryBlockFromSound, sound, preId) end
+    end)
+    local propConn = sound:GetPropertyChangedSignal("IsPlaying"):Connect(function()
+        if sound.IsPlaying and combatS.autoBlockOn then
+            task.spawn(combatTryBlockFromSound, sound, preId)
+        end
+    end)
+    local destroyConn; destroyConn = sound.Destroying:Connect(function()
+        pcall(function()
+            playedConn:Disconnect(); propConn:Disconnect(); destroyConn:Disconnect()
+        end)
+        combatSoundHooks[sound]        = nil
+        combatSoundBlockedUntil[sound] = nil
+    end)
+    combatSoundHooks[sound] = { playedConn, propConn, destroyConn }
+    if sound.IsPlaying then task.spawn(combatTryBlockFromSound, sound, preId) end
+end
+
+local function combatHookExistingSounds()
+    local kf = combatGetKillersFolder(); if not kf then return end
+    for _, killer in pairs(kf:GetChildren()) do
+        for _, desc in pairs(killer:GetDescendants()) do
+            if desc:IsA("Sound") then pcall(combatHookSound, desc) end
+        end
+    end
+end
+
+local function combatSetupSoundWatcher()
+    task.spawn(function()
+        local playersFolder = svc.WS:FindFirstChild("Players")
+        if not playersFolder then
+            playersFolder = svc.WS:WaitForChild("Players", 30)
+        end
+        if not playersFolder then return end
+
+        local kf = playersFolder:FindFirstChild("Killers")
+        if not kf then kf = playersFolder:WaitForChild("Killers", 30) end
+        if not kf then return end
+
+        combatHookExistingSounds()
+
+        kf.DescendantAdded:Connect(function(desc)
+            if desc:IsA("Sound") then pcall(combatHookSound, desc) end
+        end)
+        kf.ChildAdded:Connect(function(killer)
+            task.wait(0.1)
+            for _, desc in pairs(killer:GetDescendants()) do
+                if desc:IsA("Sound") then pcall(combatHookSound, desc) end
+            end
+        end)
+    end)
+end
+
+-- HDT (Hitbox Dragging Tech) - activates on block animation
+-- Uses improved beginDragIntoKiller logic (from FINAL_AUTO_BLOCK) with v1prware BLOCK_ANIMS IDs
+local combatHDTLastTime = 0
+local HDT_CD = 0.5
+local _combatHDTDebounce = false
+
+-- Helper to resolve the killer's root part (mirrors getKillerHRP from FINAL_AUTO_BLOCK)
+combatGetKillerHRP = function(killerModel)
+    if not killerModel then return nil end
+    local hrp = killerModel:FindFirstChild("HumanoidRootPart")
+    if hrp then return hrp end
+    if killerModel.PrimaryPart then return killerModel.PrimaryPart end
+    return killerModel:FindFirstChildWhichIsA("BasePart", true)
+end
+
+-- Improved drag: saves/restores WalkSpeed AND JumpPower, no blocking 180-flip,
+-- tracks target HRP dynamically each Heartbeat tick (mirrors beginDragIntoKiller).
+local function combatHDTBeginDrag(killerModel)
+    if _combatHDTDebounce then return end
+    if not killerModel or not killerModel.Parent then return end
+    local char = lp.Character; if not char then return end
+    local hrp  = char:FindFirstChild("HumanoidRootPart")
+    local hum  = char:FindFirstChildOfClass("Humanoid")
+    if not hrp or not hum then return end
+
+    local targetHRP = combatGetKillerHRP(killerModel)
+    if not targetHRP then return end
+
+    if combatRollMiss(combatS.hdtMissChance) then return end
+
+    _combatHDTDebounce = true
+
+    -- Save locomotion state (WalkSpeed + JumpPower so they are both restored cleanly)
+    local oldWalk         = hum.WalkSpeed
+    local oldJump         = hum.JumpPower
+    local oldPlatformStand = hum.PlatformStand
+
+    hum.WalkSpeed     = 0
+    hum.JumpPower     = 0
+    hum.PlatformStand = false  -- keep physics so BodyVelocity works
+
+    -- BodyVelocity to push the player toward the killer horizontally
+    local bv = Instance.new("BodyVelocity")
+    bv.MaxForce = Vector3.new(1e5, 0, 1e5)
+    bv.Velocity = Vector3.new(0, 0, 0)
+    bv.Parent   = hrp
+
+    local conn
+    conn = svc.Run.Heartbeat:Connect(function(dt)
+        if not _combatHDTDebounce then
+            conn:Disconnect()
+            if bv and bv.Parent then pcall(function() bv:Destroy() end) end
+            hum.WalkSpeed      = oldWalk
+            hum.JumpPower      = oldJump
+            hum.PlatformStand  = oldPlatformStand
+            return
+        end
+
+        -- abort if character or killer was removed
+        if not (char and char.Parent) or not (killerModel and killerModel.Parent) then
+            _combatHDTDebounce = false; return
+        end
+
+        -- refresh target HRP each tick (killer may respawn/teleport)
+        targetHRP = combatGetKillerHRP(killerModel)
+        if not targetHRP then _combatHDTDebounce = false; return end
+
+        local toTarget = targetHRP.Position - hrp.Position
+        local horiz    = Vector3.new(toTarget.X, 0, toTarget.Z)
+        if horiz.Magnitude > 0.01 then
+            local dir = horiz.Unit
+            bv.Velocity = Vector3.new(dir.X * combatS.hdtSpeed, bv.Velocity.Y, dir.Z * combatS.hdtSpeed)
+        else
+            bv.Velocity = Vector3.new(0, bv.Velocity.Y, 0)
+        end
+
+        -- stop when close enough
+        if toTarget.Magnitude <= 2.0 then
+            _combatHDTDebounce = false
+        end
+    end)
+
+    -- Aim at killer during drag (non-blocking, runs in its own thread)
+    task.spawn(function()
+        hum.AutoRotate = false
+        local sw = tick()
+        while tick() - sw < 0.4 do
+            pcall(function()
+                local nk = combatGetNearestKiller()
+                if nk and hrp and hrp.Parent then
+                    local tHRP2 = combatGetKillerHRP(nk)
+                    if tHRP2 then hrp.CFrame = CFrame.lookAt(hrp.Position, tHRP2.Position) end
+                end
+            end)
+            task.wait()
+        end
+        hum.AutoRotate = true
+    end)
+    -- Guard: if lock-on punch is active, re-apply false immediately after HDT tries to restore
+    task.delay(0.41, function()
+        if _clpLocked then
+            local ch2 = lp.Character
+            local h2  = ch2 and ch2:FindFirstChildOfClass("Humanoid")
+            if h2 and h2.Parent then h2.AutoRotate = false end
+        end
+    end)
+
+    -- Hard timeout (safety net so debounce never gets stuck)
+    task.delay(0.4, function()
+        if _combatHDTDebounce then _combatHDTDebounce = false end
+    end)
+end
+
+-- Triggered by AnimationPlayed (event-driven, not polled)
+-- Uses File 1's BLOCK_ANIMS IDs:
+--   72722244508749, 96959123077498, 95802026624883, 100926346851492, 120748030255574
+local function combatOnBlockAnim(track)
+    pcall(function()
+        local id = tostring(track.Animation and track.Animation.AnimationId or ""):match("%d+")
+        if not id or not BLOCK_ANIMS[id] then return end
+
+        -- HDT
+        if combatS.hdtEnabled and not _combatHDTDebounce then
+            local now = tick(); if now - combatHDTLastTime >= HDT_CD then
+                combatHDTLastTime = now
+                local nearest = combatGetNearestKiller()
+                if nearest then
+                    task.spawn(function()
+                        if combatS.hdtDelay > 0 then task.wait(combatS.hdtDelay) end
+                        combatHDTBeginDrag(nearest)
+                    end)
+                end
+            end
+        end
+
+        -- Auto Punch: fires after block duration (0.1s) so block registers first
+        if combatS.autoPunchOn then
+            task.delay(0.12, function()
+                combatFireAbility("Punch")
+                combatLockOnPunch()
+            end)
+        end
+    end)
+end
+
+-- Detection Circles
+local combatCircles = {}
+local function combatUpdateCircles()
+    local kf = combatGetKillersFolder(); if not kf then return end
+    for _, k in pairs(kf:GetChildren()) do
+        local hrp = k:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            if combatS.killerCircles then
+                if not combatCircles[k] then
+                    pcall(function()
+                        local c = Instance.new("CylinderHandleAdornment")
+                        c.Name="CombatCircle"; c.Adornee=hrp
+                        c.Color3=Color3.fromRGB(255,140,170); c.AlwaysOnTop=true; c.ZIndex=1; c.Transparency=0.6
+                        c.Radius=combatS.detectionRange; c.Height=0.12
+                        c.CFrame=CFrame.new(0,-(hrp.Size.Y/2+0.05),0)*CFrame.Angles(math.rad(90),0,0)
+                        c.Parent=hrp; combatCircles[k]=c
+                    end)
+                else
+                    combatCircles[k].Radius = combatS.detectionRange
+                end
+            else
+                if combatCircles[k] then combatCircles[k]:Destroy(); combatCircles[k]=nil end
+            end
+        end
+    end
+    -- Cleanup
+    for k, c in pairs(combatCircles) do
+        if not k.Parent or not k:FindFirstChild("HumanoidRootPart") then
+            pcall(function() c:Destroy() end); combatCircles[k]=nil
+        end
+    end
+end
+
+-- Facing Visual (floor circle under killer)
+local combatFacingVisuals = {}
+local function combatUpdateFacing()
+    local kf = combatGetKillersFolder(); if not kf then return end
+    local myRoot = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
+    for _, k in pairs(kf:GetChildren()) do
+        local hrp = k:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            if combatS.facingVisual then
+                if not combatFacingVisuals[k] then
+                    pcall(function()
+                        local v = Instance.new("CylinderHandleAdornment")
+                        v.Name = "FacingVis"; v.Adornee = hrp
+                        v.AlwaysOnTop = true; v.ZIndex = 2
+                        v.Radius = combatS.facingVisRadius; v.Height = 0.08
+                        v.CFrame = CFrame.new(0, -(hrp.Size.Y / 2 + 0.04), -combatS.facingVisRadius) * CFrame.Angles(math.rad(90), 0, 0)
+                        v.Color3 = Color3.fromRGB(120, 255, 120); v.Transparency = 0.3
+                        v.Parent = hrp
+                        combatFacingVisuals[k] = v
+                    end)
+                end
+                local vis = combatFacingVisuals[k]
+                if vis and vis.Parent then
+                    vis.Radius = combatS.facingVisRadius
+                    vis.CFrame = CFrame.new(0, -(hrp.Size.Y / 2 + 0.04), -combatS.facingVisRadius) * CFrame.Angles(math.rad(90), 0, 0)
+                    local inRange, facing = false, false
+                    if myRoot then
+                        inRange = (hrp.Position - myRoot.Position).Magnitude <= combatS.detectionRange
+                        if inRange then facing = combatIsFacing(myRoot, hrp, k.Name) end
+                    end
+                    if inRange and facing then
+                        vis.Color3 = Color3.fromRGB(120, 255, 120); vis.Transparency = 0.3
+                    elseif inRange then
+                        vis.Color3 = Color3.fromRGB(255, 120, 120); vis.Transparency = 0.4
+                    else
+                        vis.Color3 = Color3.fromRGB(255, 255, 120); vis.Transparency = 0.7
+                    end
+                end
+            else
+                if combatFacingVisuals[k] then combatFacingVisuals[k]:Destroy(); combatFacingVisuals[k] = nil end
+            end
+        end
+    end
+end
+
+-- Main loops
+local combatSoundTickConn = nil
+local combatVisualTickConn = nil
+
+local function combatStartLoops()
+    -- Sound cleanup tick (detection is now event-driven via combatHookSound)
+    if combatSoundTickConn then combatSoundTickConn:Disconnect() end
+    combatSoundTickConn = svc.Run.Heartbeat:Connect(function()
+        if not combatS.autoBlockOn then return end
+        -- Clean up stale entries from the blocked table
+        local now = tick()
+        for sound, t in pairs(combatSoundBlockedUntil) do
+            if now > t then combatSoundBlockedUntil[sound] = nil end
+        end
+    end)
+
+    -- Visual tick
+    if combatVisualTickConn then combatVisualTickConn:Disconnect() end
+    combatVisualTickConn = svc.Run.Heartbeat:Connect(function()
+        combatUpdateCircles()
+        combatUpdateFacing()
+    end)
+end
+
+local function combatStopLoops()
+    if combatSoundTickConn then combatSoundTickConn:Disconnect(); combatSoundTickConn = nil end
+    if combatVisualTickConn then combatVisualTickConn:Disconnect(); combatVisualTickConn = nil end
+    -- Cleanup visuals
+    for k, c in pairs(combatCircles) do pcall(function() c:Destroy() end) end
+    for k, v in pairs(combatFacingVisuals) do pcall(function() v:Destroy() end) end
+    combatCircles = {}
+    combatFacingVisuals = {}
+end
+
+-- Animator hook for HDT
+local function combatRefreshAnimator()
+    local c = lp.Character; if not c then _cachedAnimator = nil; return end
+    local h = c:FindFirstChildOfClass("Humanoid")
+    _cachedAnimator = h and h:FindFirstChildOfClass("Animator") or nil
+    if _cachedAnimator then
+        _cachedAnimator.AnimationPlayed:Connect(combatOnBlockAnim)
+    end
+end
+
+-- Character handlers
+lp.CharacterAdded:Connect(function(char)
+    task.wait(0.6)
+    combatRefreshAnimator()
+    if combatS.autoBlockOn then combatSetupSoundWatcher() end
+    if combatS.autoBlockOn or combatS.killerCircles or combatS.facingVisual then
+        combatStartLoops()
+    end
+end)
+
+if lp.Character then
+    task.spawn(function()
+        task.wait(1)
+        combatRefreshAnimator()
+        if combatS.autoBlockOn then combatSetupSoundWatcher() end
+        if combatS.autoBlockOn or combatS.killerCircles or combatS.facingVisual then
+            combatStartLoops()
+        end
+    end)
+end
+
+-- Auto Punch fires from combatOnBlockAnim after a successful block (0.1s delay)
+
+-- UI Elements
+sec_015:Toggle({ Title = "Auto Block (Audio)", Flag = "combatAutoBlock", Default = combatS.autoBlockOn, Callback=function(on) 
+        combatS.autoBlockOn=on
+        if on then combatSetupSoundWatcher(); combatStartLoops()
+        else combatStopLoops() end
+    end, Type = "Checkbox"})
+
+sec_015:Dropdown({ Title = "Block Type", Flag = "combatBlockType", Values = {"Block","Charge","7n7 Clone"}, Default = combatS.blockType, Callback=function(v) combatS.blockType=v end 
+})
+
+sec_015:Slider({ Title = "Detection Range", Flag = "combatDetRange", Value = {Min=5,Max=50,Default=combatS.detectionRange}, Step = 1, Callback=function(v) combatS.detectionRange=v end 
+})
+
+
+
+sec_015:Slider({ Title = "Block Delay (s)", Flag = "combatBlockDelay", Value = {Min=0,Max=0.5,Default=combatS.blockDelay}, Step = 0.01, Callback=function(v) combatS.blockDelay=v end 
+})
+
+sec_015:Toggle({ Title = "Double Block Tech", Flag = "combatDoubleBlock", Default = combatS.doubleBlock, Callback=function(on) combatS.doubleBlock=on end, Type = "Checkbox"})
+
+sec_015:Toggle({ Title = "Anti-Bait", Flag = "combatAntiBait", Default = combatS.antiBait, Callback=function(on) combatS.antiBait=on end, Type = "Checkbox"})
+
+sec_015:Slider({ Title = "Block Miss Chance %", Flag = "combatMissChance", Value = {Min=0,Max=100,Default=combatS.abMissChance}, Step = 1, Callback=function(v) combatS.abMissChance=v end 
+})
+
+local sec_016 = tabGuest1337:Section({ Title = "Auto Punch", Opened = true })
+
+sec_016:Toggle({ Title = "Auto Punch", Flag = "combatAutoPunch", Default = combatS.autoPunchOn, Callback=function(on) combatS.autoPunchOn=on end, Type = "Checkbox"})
+
+local sec_017 = tabGuest1337:Section({ Title = "HDT (Hitbox Dragging)", Opened = true })
+
+
+sec_017:Toggle({ Title = "Enable HDT", Flag = "combatHDT", Default = combatS.hdtEnabled, Callback=function(on) combatS.hdtEnabled=on end, Type = "Checkbox"})
+
+sec_017:Slider({ Title = "HDT Speed", Flag = "combatHDTSpeed", Value = {Min=1,Max=30,Default=combatS.hdtSpeed}, Step = 0.5, Callback=function(v) combatS.hdtSpeed=v end 
+})
+
+sec_017:Slider({ Title = "HDT Delay (s)", Flag = "combatHDTDelay", Value = {Min=0,Max=0.5,Default=combatS.hdtDelay}, Step = 0.01, Callback=function(v) combatS.hdtDelay=v end 
+})
+
+sec_017:Slider({ Title = "HDT Miss Chance %", Flag = "combatHDTMiss", Value = {Min=0,Max=100,Default=combatS.hdtMissChance}, Step = 1, Callback=function(v) combatS.hdtMissChance=v end 
+})
+
+local sec_018 = tabGuest1337:Section({ Title = "Vision", Opened = true })
+
+sec_018:Toggle({ Title = "Detection Circles", Flag = "combatCircles", Default = combatS.killerCircles, Callback=function(on) 
+        combatS.killerCircles=on
+        if on then combatStartLoops() else combatUpdateCircles() end
+    end, Type = "Checkbox"})
+
+sec_018:Toggle({ Title = "Facing Check", Flag = "combatFacingCheck", Default = combatS.facingCheck, Callback=function(on) combatS.facingCheck=on end, Type = "Checkbox"})
+
+sec_018:Toggle({ Title = "Facing Visual", Flag = "combatFacingVis", Default = combatS.facingVisual, Callback=function(on)
+        combatS.facingVisual=on
+        if on then combatStartLoops() end
+    end, Type = "Checkbox"})
+
+sec_018:Slider({ Title = "Facing Visual Size", Flag = "combatFacingSize", Value = {Min=1,Max=10,Default=combatS.facingVisRadius}, Step = 0.5, Callback=function(v)
+        combatS.facingVisRadius=v
+        for _, vis in pairs(combatFacingVisuals) do
+            if vis and vis.Parent then
+                vis.Radius = v
+                local adornee = vis.Adornee
+                if adornee then
+                    vis.CFrame = CFrame.new(0, -(adornee.Size.Y / 2 + 0.04), -v) * CFrame.Angles(math.rad(90), 0, 0)
+                end
+            end
+        end
+    end
+})
+
+local sec_019 = tabGuest1337:Section({ Title = "Character Lock", Opened = true })
+
+sec_019:Toggle({ Title = "Lock On Punch", Flag = "combatLockOn", Default = combatS.charLockOn, Callback=function(on) combatS.charLockOn=on end, Type = "Checkbox"})
+
+sec_019:Slider({ Title = "Lock Duration (s)", Flag = "combatLockDur", Value = {Min=0.05,Max=1.0,Default=combatS.lockDuration}, Step = 0.05, Callback=function(v) combatS.lockDuration=v end
+})
+
+sec_019:Slider({ Title = "Lock Max Distance", Flag = "combatLockDist", Value = {Min=5,Max=100,Default=combatS.lockMaxDist}, Step = 5, Callback=function(v) combatS.lockMaxDist=v end 
+})
+
+sec_019:Slider({ Title = "Prediction", Flag = "combatPrediction", Value = {Min=0,Max=15,Default=combatS.predictionVal}, Step = 0.5, Callback=function(v) combatS.predictionVal=v end 
+})
+
+-- End of Guest1337 Combat Section
+
+-- TAB: INTERFACE
+------------------------------------------------------------------------
 ------------------------------------------------------------------------
 local tabInterface = win:Tab({ Title = "Interface", Icon = "layout-dashboard" })
 local sec_030 = tabInterface:Section({ Title = "UI Functions", Opened = true })
@@ -2875,5 +3173,37 @@ sec_030:Button({ Title = "Close UI", Locked = false, Callback = function()
     if not ok then pcall(function() win:Close() end) end
 end })
 
-print("V1PRWARE ready")
+print("SAKIWARE ready")
 
+-- wait for all elements to finish initializing before loading saved values
+task.spawn(function()
+    task.wait(0.5)
+    sakiConfig:Load()
+
+    -- after load, manually kick off any features that were saved as enabled
+    -- (in case Load() doesn't fire callbacks, which is a known WindUI quirk)
+    task.defer(function()
+        if stam.on    then stamStart()  end
+        if stam.noLoss then stamApply() end
+        if speedHack.on then speedStart() end
+        if abs.on     then absStart()   end
+        -- flow and AI loops check their flags each tick, no explicit start needed
+        if esp.killers    then task.spawn(function() espDoKillers(true)    end) end
+        if esp.survivors  then task.spawn(function() espDoSurvivors(true)  end) end
+        if esp.generators then task.spawn(function() espDoGenerators(true) end) end
+        if esp.items      then task.spawn(function() espDoItems(true)      end) end
+        if esp.buildings  then task.spawn(function() espDoBuildings(true)  end) end
+        if mset.pizza  then task.spawn(scanPizza)   end
+        if mset.zombie then task.spawn(scanZombie)  end
+        if mset.puddle then task.spawn(scanPuddles) end
+        if music.on    then music.thread = task.spawn(musicMonitor) end
+    end)
+end)
+
+-- auto-save: runs every 2s, deferred so element values are always settled before writing
+task.spawn(function()
+    while true do
+        task.wait(2)
+        sakiConfig:Save()
+    end
+end)
