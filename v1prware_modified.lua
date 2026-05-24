@@ -1,5 +1,6 @@
 -- SAKIWARE | maintained by mitsuki | original by v1pr/glov
 print("SAKIWARE loaded")
+pcall(function()
 
 ------------------------------------------------------------------------
 -- services
@@ -42,7 +43,7 @@ local ui = loadstring(game:HttpGet(
 local win = ui:CreateWindow({
     Title          = "SAKIWARE",
     Icon           = "sparkles",
-    Author         = "mitsuki",
+    Author         = "maintained by mitsuki",
     Folder         = "SAKIWARE",
     Size           = UDim2.fromOffset(350, 300),
     Transparent    = false,
@@ -60,7 +61,7 @@ win:SetToggleKey(Enum.KeyCode.L)
 ui:SetFont("rbxasset://fonts/families/AccanthisADFStd.json")
 
 win:EditOpenButton({
-    Title          = "SAKIWARE",
+    Title          = "Open",
     Icon           = "sparkles",
     CornerRadius   = UDim.new(0, 16),
     StrokeThickness = 0,
@@ -105,30 +106,7 @@ end
 local tabSettings = win:Tab({ Title = "Settings", Icon = "settings" })
 local secInterface = tabSettings:Section({ Title = "Interface", Opened = true })
 
-local chatForceEnabled = false
-local chatForceConn    = nil
-local function enforceChatOn()
-    if not chatForceEnabled then return end
-    local cw = svc.TextChat:FindFirstChild("ChatWindowConfiguration")
-    local ci = svc.TextChat:FindFirstChild("ChatInputBarConfiguration")
-    if cw and not cw.Enabled then cw.Enabled = true end
-    if ci and not ci.Enabled then ci.Enabled = true end
-end
-secInterface:Toggle({
-    Title = "Show Chat Logs", Type = "Checkbox", Flag = "chatForceEnabled", Default = chatForceEnabled,
-    Callback = function(on)
-        chatForceEnabled = on
-        if chatForceConn then chatForceConn:Disconnect(); chatForceConn = nil end
-        if on then
-            enforceChatOn()
-            chatForceConn = svc.Run.Heartbeat:Connect(enforceChatOn)
-            for _, key in ipairs({ "ChatWindowConfiguration", "ChatInputBarConfiguration" }) do
-                local obj = svc.TextChat:FindFirstChild(key)
-                if obj then obj:GetPropertyChangedSignal("Enabled"):Connect(enforceChatOn) end
-            end
-        end
-    end
-})
+-- Auto Block and Chat Logger toggles added below after combat section is defined
 
 ------------------------------------------------------------------------
 ------------------------------------------------------------------------
@@ -204,75 +182,311 @@ lp.CharacterAdded:Connect(function()
     end)
 end)
 
-local secStatus = tabGlobal:Section({ Title = "Status", Opened = true })
--- FIX: correct paths confirmed as Modules.Schematics.StatusEffects.*
--- Glitched is a LocalScript inside KillerExclusive.Glitched.Frame — handled separately
-local statusGroups = {
-    Slowness      = { on = false, paths = { "Modules.Schematics.StatusEffects.Slowness" } },
-    Hallucination = { on = false, paths = { "Modules.Schematics.StatusEffects.KillerExclusive.Hallucination" } },
-    Visual        = { on = false, paths = {
-        "Modules.Schematics.StatusEffects.Blindness",
-        "Modules.Schematics.StatusEffects.SurvivorExclusive.Subspaced",
-        -- Glitched is a LocalScript inside a Frame, destroyed via parent folder instead
-        "Modules.Schematics.StatusEffects.KillerExclusive.Glitched",
-    }},
-}
-local statusBackup = {}
-local function statusResolve(path)
-    local node = svc.RS
-    for seg in path:gmatch("[^%.]+") do node = node:FindFirstChild(seg); if not node then return nil end end
-    return node
-end
-local function statusBlock(path)
-    if statusBackup[path] then return end
-    local mod = statusResolve(path)
-    if not mod then return end
-    -- Glitched is a Folder containing a Frame containing a LocalScript — destroy the folder
-    if mod:IsA("Folder") then
-        statusBackup[path] = { clone = mod:Clone(), isFolder = true, parentPath = path:match("^(.-)%.?[^%.]+$") }
-        mod:Destroy()
-    elseif mod:IsA("ModuleScript") or mod:IsA("LocalScript") then
-        statusBackup[path] = { clone = mod:Clone(), src = mod.Source, isFolder = false }
-        mod:Destroy()
-    end
-end
-local function statusRestore(path)
-    local saved = statusBackup[path]; if not saved then return end
-    local existing = statusResolve(path); if existing then existing:Destroy() end
-    local parentPath = saved.parentPath or path:match("^(.-)%.?[^%.]+$")
-    local parent = statusResolve(parentPath)
-    if parent then
-        if not saved.isFolder then saved.clone.Source = saved.src end
-        saved.clone.Parent = parent
-    end
-    statusBackup[path] = nil
-end
-local statusLoopThread = nil
-local function statusTick()
-    if statusLoopThread then return end
-    statusLoopThread = task.spawn(function()
-        while true do
-            local any = false
-            for _, g in pairs(statusGroups) do
-                if g.on then any = true; for _, p in ipairs(g.paths) do local m = statusResolve(p); if m then m:Destroy() end end end
+
+
+------------------------------------------------------------------------
+-- CHAT LOGGER MODULE (ported from lovesaken)
+------------------------------------------------------------------------
+local chatLogEnabled = false
+local ChatLogger = {}
+do
+    local chatConnections = {}
+    local chatWindow      = nil
+    local chatScreenGui   = nil
+    local chatScrollFrame = nil
+    local chatContainer   = nil
+    local chatInput       = nil
+    local msgOrder        = 0
+
+    local COLORS = {
+        System    = Color3.fromRGB(200, 200, 255),
+        Player    = Color3.fromRGB(255, 255, 255),
+        Whisper   = Color3.fromRGB(255, 180, 255),
+        Team      = Color3.fromRGB(0, 255, 255),
+        Error     = Color3.fromRGB(255, 100, 100),
+        Timestamp = Color3.fromRGB(130, 130, 130),
+        Self      = Color3.fromRGB(140, 220, 255),
+    }
+
+    function ChatLogger.createUI()
+        if chatWindow and chatWindow.Parent then return end
+        pcall(function()
+            local pg = lp:FindFirstChildOfClass("PlayerGui"); if not pg then return end
+            chatScreenGui = Instance.new("ScreenGui")
+            chatScreenGui.Name = "ChatLoggerScreen"
+            chatScreenGui.ResetOnSpawn = false
+            chatScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+            chatScreenGui.DisplayOrder = 10
+            chatScreenGui.Parent = pg
+
+            chatWindow = Instance.new("Frame")
+            chatWindow.Name = "ChatLoggerUI"
+            chatWindow.Size = UDim2.new(0, 340, 0, 180)
+            chatWindow.Position = UDim2.new(0, 80, 0, 10)
+            chatWindow.AnchorPoint = Vector2.new(0, 0)
+            chatWindow.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+            chatWindow.BackgroundTransparency = 0.15
+            chatWindow.BorderSizePixel = 0
+            chatWindow.ClipsDescendants = true
+            chatWindow.Parent = chatScreenGui
+            local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0, 8); corner.Parent = chatWindow
+
+            local titleBar = Instance.new("Frame")
+            titleBar.Name = "TitleBar"; titleBar.Size = UDim2.new(1, 0, 0, 32)
+            titleBar.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
+            titleBar.BackgroundTransparency = 0.2; titleBar.BorderSizePixel = 0; titleBar.Parent = chatWindow
+            local tc = Instance.new("UICorner"); tc.CornerRadius = UDim.new(0, 8); tc.Parent = titleBar
+
+            local titleText = Instance.new("TextLabel")
+            titleText.Size = UDim2.new(1, -100, 1, 0); titleText.Position = UDim2.new(0, 12, 0, 0)
+            titleText.BackgroundTransparency = 1; titleText.Text = "💬 Chat Logger"
+            titleText.TextColor3 = Color3.fromRGB(220, 220, 220); titleText.TextSize = 13
+            titleText.TextXAlignment = Enum.TextXAlignment.Left; titleText.Font = Enum.Font.GothamBold
+            titleText.Parent = titleBar
+
+            local closeBtn = Instance.new("TextButton")
+            closeBtn.Size = UDim2.new(0, 32, 1, 0); closeBtn.Position = UDim2.new(1, -32, 0, 0)
+            closeBtn.BackgroundTransparency = 1; closeBtn.Text = "X"
+            closeBtn.TextColor3 = Color3.fromRGB(180, 180, 180); closeBtn.TextSize = 14
+            closeBtn.Font = Enum.Font.GothamBold; closeBtn.Parent = titleBar
+            closeBtn.MouseButton1Click:Connect(function() chatWindow.Visible = false end)
+
+            chatScrollFrame = Instance.new("ScrollingFrame")
+            chatScrollFrame.Name = "ChatScroller"; chatScrollFrame.Size = UDim2.new(1, 0, 1, -70)
+            chatScrollFrame.Position = UDim2.new(0, 0, 0, 32); chatScrollFrame.BackgroundTransparency = 1
+            chatScrollFrame.BorderSizePixel = 0; chatScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+            chatScrollFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+            chatScrollFrame.ScrollBarThickness = 6
+            chatScrollFrame.ScrollBarImageColor3 = Color3.fromRGB(90, 90, 90)
+            chatScrollFrame.VerticalScrollBarPosition = Enum.VerticalScrollBarPosition.Right
+            chatScrollFrame.Parent = chatWindow
+
+            chatContainer = Instance.new("UIListLayout")
+            chatContainer.Parent = chatScrollFrame; chatContainer.SortOrder = Enum.SortOrder.LayoutOrder
+            chatContainer.Padding = UDim.new(0, 2)
+            local pad = Instance.new("UIPadding"); pad.PaddingLeft = UDim.new(0, 8)
+            pad.PaddingRight = UDim.new(0, 8); pad.PaddingTop = UDim.new(0, 5)
+            pad.PaddingBottom = UDim.new(0, 5); pad.Parent = chatScrollFrame
+
+            local inputFrame = Instance.new("Frame")
+            inputFrame.Name = "InputFrame"; inputFrame.Size = UDim2.new(1, 0, 0, 38)
+            inputFrame.Position = UDim2.new(0, 0, 1, -38)
+            inputFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+            inputFrame.BackgroundTransparency = 0.2; inputFrame.BorderSizePixel = 0; inputFrame.Parent = chatWindow
+            local ic = Instance.new("UICorner"); ic.CornerRadius = UDim.new(0, 6); ic.Parent = inputFrame
+
+            chatInput = Instance.new("TextBox")
+            chatInput.Name = "ChatInput"; chatInput.Size = UDim2.new(1, -56, 1, -8)
+            chatInput.Position = UDim2.new(0, 8, 0, 4)
+            chatInput.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+            chatInput.BackgroundTransparency = 0.3; chatInput.Text = ""
+            chatInput.TextColor3 = Color3.fromRGB(255, 255, 255); chatInput.TextSize = 13
+            chatInput.TextXAlignment = Enum.TextXAlignment.Left; chatInput.Font = Enum.Font.Gotham
+            chatInput.PlaceholderText = "Type a message... (Enter to send)"
+            chatInput.PlaceholderColor3 = Color3.fromRGB(150, 150, 150)
+            chatInput.ClearTextOnFocus = false; chatInput.Parent = inputFrame
+            local ic2 = Instance.new("UICorner"); ic2.CornerRadius = UDim.new(0, 4); ic2.Parent = chatInput
+
+            local sendBtn = Instance.new("TextButton")
+            sendBtn.Size = UDim2.new(0, 40, 1, -8); sendBtn.Position = UDim2.new(1, -48, 0, 4)
+            sendBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 90)
+            sendBtn.BackgroundTransparency = 0.3; sendBtn.Text = "-->"
+            sendBtn.TextColor3 = Color3.fromRGB(220, 220, 220); sendBtn.TextSize = 14
+            sendBtn.Font = Enum.Font.GothamBold; sendBtn.Parent = inputFrame
+            local sc = Instance.new("UICorner"); sc.CornerRadius = UDim.new(0, 4); sc.Parent = sendBtn
+
+            local function sendMessage()
+                local msg = chatInput.Text:gsub("^%s+", ""):gsub("%s+$", "")
+                if msg == "" then return end
+                ChatLogger.addMessage(lp.Name, msg, "self")
+                pcall(function()
+                    local net = svc.RS:FindFirstChild("Modules") and svc.RS.Modules:FindFirstChild("Network")
+                    local re = net and net:FindFirstChild("RemoteEvent")
+                    if re then re:FireServer("SendChatMessage", msg) end
+                end)
+                pcall(function()
+                    local gen = svc.TextChat.TextChannels and svc.TextChat.TextChannels:FindFirstChild("RBXGeneral")
+                    if gen then gen:SendAsync(msg) end
+                end)
+                chatInput.Text = ""
             end
-            if not any then break end; task.wait(0.8)
-        end; statusLoopThread = nil
-    end)
+            chatInput.FocusLost:Connect(function(enter) if enter then sendMessage() end end)
+            sendBtn.MouseButton1Click:Connect(sendMessage)
+
+            -- Draggable title bar
+            local dragging, dragStart, startPos = false, nil, nil
+            titleBar.InputBegan:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                    dragging = true; dragStart = input.Position; startPos = chatWindow.Position
+                    input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
+                end
+            end)
+            svc.Input.InputChanged:Connect(function(input)
+                if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+                    local delta = input.Position - dragStart
+                    chatWindow.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+                end
+            end)
+        end)
+    end
+
+    function ChatLogger.addMessage(sender, message, messageType)
+        pcall(function()
+            if not chatScrollFrame or not chatContainer then ChatLogger.createUI(); if not chatScrollFrame then return end end
+            msgOrder = msgOrder + 1
+            local nameColor = COLORS.Player
+            local textColor = Color3.fromRGB(240, 240, 240)
+            local prefix = ""
+            if messageType == "system" then nameColor = COLORS.System; prefix = "[sys] "
+            elseif messageType == "whisper" then nameColor = COLORS.Whisper; prefix = "[pm] "
+            elseif messageType == "team" then nameColor = COLORS.Team; prefix = "[team] "
+            elseif messageType == "self" then nameColor = COLORS.Self
+            elseif messageType == "error" then textColor = COLORS.Error end
+            local ts = os.date("%H:%M")
+            local msgFrame = Instance.new("Frame")
+            msgFrame.Name = "Msg_"..msgOrder; msgFrame.LayoutOrder = msgOrder
+            msgFrame.Size = UDim2.new(1, 0, 0, 0); msgFrame.AutomaticSize = Enum.AutomaticSize.Y
+            msgFrame.BackgroundTransparency = 1; msgFrame.Parent = chatScrollFrame
+            local line = Instance.new("TextLabel")
+            line.Size = UDim2.new(1, 0, 0, 0); line.AutomaticSize = Enum.AutomaticSize.Y
+            line.BackgroundTransparency = 1; line.TextColor3 = textColor; line.TextSize = 12
+            line.TextXAlignment = Enum.TextXAlignment.Left; line.TextWrapped = true
+            line.RichText = true; line.Font = Enum.Font.Gotham
+            line.Text = string.format('<font color="#%02x%02x%02x">[%s]</font> <font color="#%02x%02x%02x"><b>%s%s</b></font>: %s',
+                math.floor(COLORS.Timestamp.R*255), math.floor(COLORS.Timestamp.G*255), math.floor(COLORS.Timestamp.B*255), ts,
+                math.floor(nameColor.R*255), math.floor(nameColor.G*255), math.floor(nameColor.B*255),
+                prefix, sender, message)
+            line.Parent = msgFrame
+            task.defer(function()
+                pcall(function()
+                    chatScrollFrame.CanvasPosition = Vector2.new(0, math.max(0, chatScrollFrame.AbsoluteCanvasSize.Y - chatScrollFrame.AbsoluteSize.Y))
+                end)
+            end)
+            local frames = {}
+            for _, c in ipairs(chatScrollFrame:GetChildren()) do if c:IsA("Frame") then table.insert(frames, c) end end
+            if #frames > 100 then for i = 1, #frames - 100 do pcall(function() frames[i]:Destroy() end) end end
+        end)
+    end
+
+    function ChatLogger.setup()
+        pcall(function()
+            ChatLogger.createUI()
+            for _, conn in ipairs(chatConnections) do pcall(function() conn:Disconnect() end) end
+            chatConnections = {}
+            local tcs = svc.TextChat
+            if tcs and tcs.TextChannels then
+                local gen = tcs.TextChannels:FindFirstChild("RBXGeneral")
+                if gen then
+                    table.insert(chatConnections, gen.MessageReceived:Connect(function(msg)
+                        local sender = msg.TextSource and msg.TextSource.Name or "System"
+                        if sender == lp.Name then return end
+                        if chatLogEnabled then ChatLogger.addMessage(sender, msg.Text or "", "player") end
+                    end))
+                end
+                local function hookChannel(ch)
+                    if not ch:IsA("TextChannel") or ch.Name == "RBXGeneral" then return end
+                    table.insert(chatConnections, ch.MessageReceived:Connect(function(msg)
+                        local sender = msg.TextSource and msg.TextSource.Name or "System"
+                        if sender == lp.Name then return end
+                        if chatLogEnabled then
+                            local mtype = ch.Name:lower():find("team") and "team" or "player"
+                            ChatLogger.addMessage(sender, msg.Text or "", mtype)
+                        end
+                    end))
+                end
+                for _, ch in ipairs(tcs.TextChannels:GetChildren()) do hookChannel(ch) end
+                table.insert(chatConnections, tcs.TextChannels.ChildAdded:Connect(function(ch) task.wait(0.1); hookChannel(ch) end))
+            end
+            if chatLogEnabled then ChatLogger.addMessage("System", "Chat logger active! Type below to chat.", "system") end
+        end)
+    end
+
+    function ChatLogger.clear()
+        pcall(function()
+            if chatScrollFrame then for _, c in ipairs(chatScrollFrame:GetChildren()) do if c:IsA("Frame") then c:Destroy() end end end
+            msgOrder = 0
+            ChatLogger.addMessage("System", "Chat log cleared!", "system")
+        end)
+    end
+
+    function ChatLogger.toggle()
+        if chatWindow then chatWindow.Visible = not chatWindow.Visible end
+    end
+
+    function ChatLogger.cleanup()
+        for _, conn in ipairs(chatConnections) do pcall(function() conn:Disconnect() end) end
+        chatConnections = {}
+        if chatScreenGui then pcall(function() chatScreenGui:Destroy() end); chatScreenGui = nil end
+        chatWindow = nil; chatScrollFrame = nil; chatContainer = nil; chatInput = nil; msgOrder = 0
+    end
 end
-local function statusToggle(name)
-    local g = statusGroups[name]; if not g then return end; g.on = not g.on
-    for _, p in ipairs(g.paths) do if g.on then statusBlock(p) else statusRestore(p) end end
-    local any = false; for _, sg in pairs(statusGroups) do if sg.on then any = true; break end end
-    if any then statusTick() elseif statusLoopThread then task.cancel(statusLoopThread); statusLoopThread = nil end
+
+------------------------------------------------------------------------
+-- ANTI-TAPH MODULE (ported from lovesaken)
+------------------------------------------------------------------------
+local antiTaphEnabled = false
+local AntiTaph = {}
+do
+    local origLighting = {}
+    local origEffects  = {}
+    local taphConns    = {}
+    local Lighting     = game:GetService("Lighting")
+
+    function AntiTaph.apply()
+        if not antiTaphEnabled then return end
+        pcall(function()
+            origLighting.Brightness     = Lighting.Brightness
+            origLighting.ClockTime      = Lighting.ClockTime
+            origLighting.FogEnd         = Lighting.FogEnd
+            origLighting.FogStart       = Lighting.FogStart
+            origLighting.OutdoorAmbient = Lighting.OutdoorAmbient
+            Lighting.Brightness     = 2
+            Lighting.ClockTime      = 14
+            Lighting.FogEnd         = 100000
+            Lighting.FogStart       = 0
+            Lighting.OutdoorAmbient = Color3.fromRGB(128, 128, 128)
+
+            local function disableEffects(parent)
+                if not parent then return end
+                for _, obj in ipairs(parent:GetDescendants()) do
+                    if obj:IsA("BlurEffect") or obj:IsA("ColorCorrectionEffect") or obj:IsA("BloomEffect") or obj:IsA("SunRaysEffect") then
+                        if not origEffects[obj] then origEffects[obj] = obj.Enabled end
+                        obj.Enabled = false
+                    end
+                    if obj:IsA("Sound") and obj.Name and (obj.Name:lower():find("taph") or obj.Name:lower():find("blind") or obj.Name:lower():find("static")) then
+                        pcall(function() obj.Volume = 0 end)
+                        pcall(function() obj:Stop() end)
+                    end
+                end
+            end
+            disableEffects(svc.WS.CurrentCamera)
+            disableEffects(svc.WS)
+            disableEffects(Lighting)
+
+            table.insert(taphConns, Lighting.DescendantAdded:Connect(function(desc)
+                if desc:IsA("BlurEffect") or desc:IsA("ColorCorrectionEffect") or desc:IsA("BloomEffect") then
+                    pcall(function() desc.Enabled = false end)
+                end
+            end))
+        end)
+    end
+
+    function AntiTaph.remove()
+        pcall(function()
+            if origLighting.Brightness then
+                Lighting.Brightness     = origLighting.Brightness
+                Lighting.ClockTime      = origLighting.ClockTime
+                Lighting.FogEnd         = origLighting.FogEnd
+                Lighting.FogStart       = origLighting.FogStart
+                Lighting.OutdoorAmbient = origLighting.OutdoorAmbient
+            end
+            for effect, wasEnabled in pairs(origEffects) do pcall(function() effect.Enabled = wasEnabled end) end
+            origEffects = {}
+            for _, conn in ipairs(taphConns) do pcall(function() conn:Disconnect() end) end
+            taphConns = {}
+        end)
+    end
 end
-secStatus:Button({ Title = "Toggle: Slowness",       Callback = function() statusToggle("Slowness")      end })
-secStatus:Button({ Title = "Toggle: Hallucination",  Callback = function() statusToggle("Hallucination") end })
-secStatus:Button({ Title = "Toggle: Visual Effects", Callback = function() statusToggle("Visual")        end })
-lp.CharacterAdded:Connect(function()
-    statusBackup = {}; for _, g in pairs(statusGroups) do g.on = false end
-    if statusLoopThread then task.cancel(statusLoopThread); statusLoopThread = nil end
-end)
 
 ------------------------------------------------------------------------
 -- remote helper (used by aimbot + combat)
@@ -1085,6 +1299,7 @@ do
     local elliotGravity     = 196.2
     local elliotHum, elliotHRP = nil, nil
     local elliotCamera      = svc.WS.CurrentCamera
+    local elliotTargetMode  = "Low HP"
 
     local function elliotSetupChar(char)
         elliotHum = char:WaitForChild("Humanoid")
@@ -1095,7 +1310,7 @@ do
 
     task.spawn(function()
         local ok, re = pcall(function()
-            return svc.RS:WaitForChild("Modules",5):WaitForChild("Network",5):WaitForChild("RemoteEvent",5)
+            return svc.RS:WaitForChild("Modules",5):WaitForChild("Network",5):WaitForChild("Network",5):WaitForChild("RemoteEvent",5)
         end)
         if ok and re then
             local oldNC
@@ -1129,13 +1344,16 @@ do
         local sf = svc.WS:FindFirstChild("Players") and svc.WS.Players:FindFirstChild("Survivors")
         if not sf then sf = svc.WS:FindFirstChild("Survivors") end
         if not sf or not elliotHRP then return nil end
-        local best, bestHP = nil, math.huge
+        local best, bestVal = nil, math.huge
         for _, s in ipairs(sf:GetChildren()) do
             if s ~= lp.Character then
                 local h = s:FindFirstChildOfClass("Humanoid")
                 local r = s:FindFirstChild("HumanoidRootPart")
-                if h and r and h.Health > 0 and h.Health < bestHP then
-                    best = r; bestHP = h.Health
+                if h and r and h.Health > 0 then
+                    local val = elliotTargetMode == "Closest"
+                        and (r.Position - elliotHRP.Position).Magnitude
+                        or  h.Health
+                    if val < bestVal then best = r; bestVal = val end
                 end
             end
         end
@@ -1158,11 +1376,11 @@ do
                 local tCF = CFrame.new(elliotHRP.Position, elliotHRP.Position + flat)
                 local cur = elliotHRP.CFrame
                 local nCF = cur:Lerp(tCF, 0.35)
-                elliotHRP.CFrame = CFrame.new(cur.Position) * (nCF - nCF.Position)
+                elliotHRP.CFrame = CFrame.new(cur.Position) * nCF.Rotation
             end
         end
         if elliotAimType == "Camera Aimbot" or elliotAimType == "Camera + Character" then
-            elliotCamera.CFrame = CFrame.lookAt(elliotCamera.CFrame.Position, predPos)
+            local cam = svc.WS.CurrentCamera; if cam then cam.CFrame = CFrame.lookAt(cam.CFrame.Position, predPos) end
         end
     end
 
@@ -1220,6 +1438,7 @@ do
     sec_014:Slider({ Title = "Pizza Throw Force", Flag = "elliotThrowForce", Value = {Min=50,Max=150,Default=80}, Step = 5, Callback=function(v) elliotThrowForce=v end })
     sec_014:Slider({ Title = "Arc Segments", Flag = "elliotArcSegs", Value = {Min=20,Max=100,Default=50}, Step = 5, Callback=function(v) elliotArcSegs=v end })
     sec_014:Dropdown({ Title = "Aimbot Type", Flag = "elliotAimType", Values = {"HRP Aimbot","Camera Aimbot","Camera + Character"}, Default = "Camera + Character", Callback=function(v) elliotAimType=v end })
+    sec_014:Dropdown({ Title = "Target Mode", Flag = "elliotTargetMode", Values = {"Low HP","Closest"}, Default = "Low HP", Callback=function(v) elliotTargetMode=v end })
     sec_014:Toggle({ Title = "Show Pizza Arc", Flag = "elliotShowArc", Default = false, Callback=function(v)
         elliotShowArc=v
         if v then elliotCreateArcFolder()
@@ -1840,18 +2059,31 @@ do
             pcall(function() jd_crystalCB=getcallbackvalue(jd_NetworkRF,"OnClientInvoke") end)
         end
         jd_NetworkRF.OnClientInvoke=function(reqName,...)
-            if reqName=="GetCameraCF" and jd_enabled and jd_aimbotOn then
-                local char=jd_lp.Character; local myHRP=char and char:FindFirstChild("HumanoidRootPart")
-                if myHRP then
-                    local killer=jd_getNearestKiller(myHRP.Position)
-                    local killerHRP=killer and killer:FindFirstChild("HumanoidRootPart")
-                    if killerHRP then
-                        local ok,cf=pcall(jd_buildCamCF,myHRP,killerHRP,250,40)
-                        if ok and cf then return cf end
+            local ok, result = pcall(function(...)
+                if jd_enabled and jd_aimbotOn then
+                    local char=jd_lp.Character; local myHRP=char and char:FindFirstChild("HumanoidRootPart")
+                    if myHRP then
+                        local killer=jd_getNearestKiller(myHRP.Position)
+                        local killerHRP=killer and killer:FindFirstChild("HumanoidRootPart")
+                        if killerHRP then
+                            if reqName=="GetMousePosition" then
+                                local vel=jd_getKillerVelocity(killerHRP)
+                                local predPos=killerHRP.Position+vel*jd_PREDICTION+Vector3.new(0,jd_AIM_OFFSET,0)
+                                return predPos
+                            end
+                            if reqName=="GetCameraCF" then
+                                local ok2,cf=pcall(jd_buildCamCF,myHRP,killerHRP,250,40)
+                                if ok2 and cf then return cf end
+                            end
+                        end
                     end
                 end
+                if jd_crystalCB then return jd_crystalCB(reqName,...) end
+            end, ...)
+            if not ok then
+                if jd_crystalCB then return jd_crystalCB(reqName,...) end
             end
-            if jd_crystalCB then return jd_crystalCB(reqName,...) end
+            return result
         end
         jd_patched=true
     end
@@ -2458,10 +2690,9 @@ local combatS = {
     facingCheck = true,
     facingVisual = false,
     facingVisRadius = 3,
-    charLockOn = false,
-    lockMaxDist = 30,
-    lockDuration = 0.1,
-    predictionVal = 4,
+    aimPunchActive   = false,
+    punchPrediction  = 2.3,
+    aimPunchDuration = 0.5,
 }
 
 local TRIGGER_SOUNDS = {
@@ -2487,7 +2718,7 @@ local TRIGGER_SOUNDS = {
     ["5148302439"]=true,     ["98675142200448"]=true, ["128367348686124"]=true,["71805956520207"]=true,
     ["125213046326879"]=true,["103684883268194"]=true,["109246041199659"]=true,
     ["80540530406270"]=true, ["139523195429581"]=true,["105204810054381"]=true,["114742322778642"]=true,
-    ["116468089135195"]=true,["112809109188560"]=true,
+    ["116468089135195"]=true,["112809109188560"]=true,["106727013904874"]=true,
 }
 
 -- Block anim IDs for HDT detection
@@ -2570,66 +2801,114 @@ local function combatFireAbility(abilityType)
     pcall(function() rem:FireServer(abilityType) end)
 end
 
--- Forward declaration so combatLockOnPunch can reference it before the full definition below
+-- Forward declaration (used by HDT)
 local combatGetKillerHRP
 
--- Flag that blocks the AI loop from touching AutoRotate while lock-on is active
-local _clpLocked = false
+-- Punch animation IDs to trigger aim lock (from V1PRBLOCK)
+local combatTrackedPunchAnimations = {
+    ["87259391926321"]=true,["140703210927645"]=true,["136007065400978"]=true,["129843313690921"]=true,
+    ["86709774283672"]=true, ["108807732150251"]=true,["138040001965654"]=true,["86096387000557"]=true,
+    ["81905101227053"]=true, ["127777649118195"]=true,["99100240941590"]=true, ["92831180929659"]=true,
+    ["112081768119093"]=true,["117587689359268"]=true,["91830732867282"]=true, ["91730605416216"]=true,
+    ["100184164753080"]=true,
+}
 
--- Lock-On-Punch: lock to nearest killer immediately when punch fires, release after lockDuration
-local _clpActive = false
-local function combatLockOnPunch()
-    if not combatS.charLockOn then return end
-    if _clpActive then return end
-    _clpActive = true
-    _clpLocked = true
+-- Aim Punch state
+local combatPunchAiming          = false
+local combatPunchLastTriggerTime = 0
+local combatOriginalAutoRotate   = nil
+local combatOriginalHRPRotY      = nil   -- saved Y rotation before aim punch snaps HRP
+local combatOriginalHRPCFrame    = nil   -- saved full CFrame before aim punch
+local combatAimConnection        = nil
 
-    local char = lp.Character
-    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-    local hum  = char and char:FindFirstChildOfClass("Humanoid")
-    if not hrp or not hum then _clpActive = false; _clpLocked = false; return end
-    local killer = combatGetNearestKiller()
-    local khrp   = killer and combatGetKillerHRP(killer)
-    if not khrp then _clpActive = false; _clpLocked = false; return end
-
-    local oldAR = hum.AutoRotate
-    hum.AutoRotate = false
-
-    local bg = Instance.new("BodyGyro")
-    bg.MaxTorque = Vector3.new(0, 1e6, 0)
-    bg.P         = 1e5
-    bg.D         = 500
-    bg.CFrame    = CFrame.lookAt(hrp.Position, Vector3.new(khrp.Position.X, hrp.Position.Y, khrp.Position.Z))
-    bg.Parent    = hrp
-
-    local function doRestore()
-        -- Re-fetch hum in case character respawned during lock
-        local ch2  = lp.Character
-        local hum2 = ch2 and ch2:FindFirstChildOfClass("Humanoid")
-        if hum2 and hum2.Parent then hum2.AutoRotate = oldAR end
-        _clpActive = false
-        _clpLocked = false
-    end
-
-    local conn
-    conn = svc.Run.Heartbeat:Connect(function()
-        if not (hrp and hrp.Parent) or not (khrp and khrp.Parent) then
-            conn:Disconnect()
-            pcall(function() bg:Destroy() end)
-            doRestore()
-            return
+local function combatSetupAimPunch(char)
+    if combatAimConnection then combatAimConnection:Disconnect(); combatAimConnection = nil end
+    local hum  = char:FindFirstChild("Humanoid")
+    local anim = hum and hum:FindFirstChildOfClass("Animator")
+    if not anim or not combatS.aimPunchActive then return end
+    combatAimConnection = anim.AnimationPlayed:Connect(function(track)
+        local animId = track.Animation.AnimationId:match("%d+")
+        if combatS.aimPunchActive and combatTrackedPunchAnimations[animId] then
+            local c = lp.Character
+            local h = c and c:FindFirstChild("Humanoid")
+            local r = c and c:FindFirstChild("HumanoidRootPart")
+            -- Only save if not already mid-punch so we don't overwrite the original rotation
+            if h and r and not combatPunchAiming then
+                combatOriginalAutoRotate = h.AutoRotate
+                combatOriginalHRPCFrame  = r.CFrame
+                combatOriginalHRPRotY    = select(2, r.CFrame:ToEulerAnglesYXZ())
+            end
+            combatPunchLastTriggerTime = tick()
+            combatPunchAiming = true
         end
-        -- Keep AutoRotate locked in case something else reset it
-        if hum and hum.Parent then hum.AutoRotate = false end
-        bg.CFrame = CFrame.lookAt(hrp.Position, Vector3.new(khrp.Position.X, hrp.Position.Y, khrp.Position.Z))
-    end)
-
-    task.delay(combatS.lockDuration, function()
-        conn:Disconnect()
-        pcall(function() bg:Destroy() end)
-        doRestore()
     end)
 end
+
+-- Aim-punch RenderStepped (aims toward nearest killer while punch animation plays)
+svc.Run.RenderStepped:Connect(function()
+    if not combatS.aimPunchActive then
+        if combatPunchAiming then
+            combatPunchAiming = false
+            local char = lp.Character
+            local hum  = char and char:FindFirstChild("Humanoid")
+            local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+            if hrp and combatOriginalHRPCFrame ~= nil then
+                hrp.CFrame = CFrame.new(hrp.Position) * combatOriginalHRPCFrame.Rotation
+                hrp.AssemblyAngularVelocity = Vector3.zero
+                combatOriginalHRPCFrame = nil
+                combatOriginalHRPRotY = nil
+            end
+            if hum then
+                hum.AutoRotate = combatOriginalAutoRotate ~= nil and combatOriginalAutoRotate or true
+                combatOriginalAutoRotate = nil
+            end
+        end
+        return
+    end
+    if not combatPunchAiming then return end
+    local elapsed = tick() - combatPunchLastTriggerTime
+    local char = lp.Character
+    local hum  = char and char:FindFirstChild("Humanoid")
+    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+    if not hum or not hrp then combatPunchAiming = false; return end
+    if elapsed > combatS.aimPunchDuration then
+        combatPunchAiming = false
+        if hrp and combatOriginalHRPCFrame ~= nil then
+            hrp.CFrame = CFrame.new(hrp.Position) * combatOriginalHRPCFrame.Rotation
+            hrp.AssemblyAngularVelocity = Vector3.zero
+            combatOriginalHRPCFrame = nil
+            combatOriginalHRPRotY = nil
+        end
+        if hum then
+            hum.AutoRotate = combatOriginalAutoRotate ~= nil and combatOriginalAutoRotate or true
+            combatOriginalAutoRotate = nil
+        end
+        return
+    end
+    hum.AutoRotate = false
+    hrp.AssemblyAngularVelocity = Vector3.zero
+    local kf = svc.WS:FindFirstChild("Players") and svc.WS.Players:FindFirstChild("Killers")
+    if kf then
+        local bestDist, targetHRP = math.huge, nil
+        for _, killer in ipairs(kf:GetChildren()) do
+            local khrp = killer:FindFirstChild("HumanoidRootPart")
+            if khrp then
+                local d = (khrp.Position - hrp.Position).Magnitude
+                if d < bestDist then bestDist = d; targetHRP = khrp end
+            end
+        end
+        if targetHRP then
+            local vel = targetHRP.AssemblyLinearVelocity or Vector3.zero
+            local predictPos = vel.Magnitude > 0.5
+                and (targetHRP.Position + vel * (combatS.punchPrediction / 60))
+                or targetHRP.Position
+            local dir = (predictPos - hrp.Position) * Vector3.new(1, 0, 1)
+            if dir.Magnitude > 0.01 then
+                hrp.CFrame = CFrame.new(hrp.Position, hrp.Position + dir.Unit)
+            end
+        end
+    end
+end)
 
 -- Auto Block (Audio-based) — event-driven hook system
 local combatSoundHooks        = {}
@@ -2712,7 +2991,7 @@ local function combatTryBlockFromSound(sound, preId)
     local function doFire()
         if combatS.blockType == "Block" then
             combatFireAbility("Block")
-            if combatS.doubleBlock then combatFireAbility("Punch"); combatLockOnPunch() end
+            if combatS.doubleBlock then combatFireAbility("Punch") end
         elseif combatS.blockType == "Charge" then
             combatFireAbility("Charge")
         elseif combatS.blockType == "7n7 Clone" then
@@ -2884,15 +3163,6 @@ local function combatHDTBeginDrag(killerModel)
         end
         hum.AutoRotate = true
     end)
-    -- Guard: if lock-on punch is active, re-apply false immediately after HDT tries to restore
-    task.delay(0.41, function()
-        if _clpLocked then
-            local ch2 = lp.Character
-            local h2  = ch2 and ch2:FindFirstChildOfClass("Humanoid")
-            if h2 and h2.Parent then h2.AutoRotate = false end
-        end
-    end)
-
     -- Hard timeout (safety net so debounce never gets stuck)
     task.delay(0.4, function()
         if _combatHDTDebounce then _combatHDTDebounce = false end
@@ -2925,7 +3195,6 @@ local function combatOnBlockAnim(track)
         if combatS.autoPunchOn then
             task.delay(0.12, function()
                 combatFireAbility("Punch")
-                combatLockOnPunch()
             end)
         end
     end)
@@ -3057,6 +3326,7 @@ end
 lp.CharacterAdded:Connect(function(char)
     task.wait(0.6)
     combatRefreshAnimator()
+    combatSetupAimPunch(char)
     if combatS.autoBlockOn then combatSetupSoundWatcher() end
     if combatS.autoBlockOn or combatS.killerCircles or combatS.facingVisual then
         combatStartLoops()
@@ -3067,6 +3337,7 @@ if lp.Character then
     task.spawn(function()
         task.wait(1)
         combatRefreshAnimator()
+        combatSetupAimPunch(lp.Character)
         if combatS.autoBlockOn then combatSetupSoundWatcher() end
         if combatS.autoBlockOn or combatS.killerCircles or combatS.facingVisual then
             combatStartLoops()
@@ -3077,8 +3348,9 @@ end
 -- Auto Punch fires from combatOnBlockAnim after a successful block (0.1s delay)
 
 -- UI Elements
-sec_015:Toggle({ Title = "Auto Block (Audio)", Flag = "combatAutoBlock", Default = combatS.autoBlockOn, Callback=function(on) 
+local _g1337AbToggle = sec_015:Toggle({ Title = "Auto Block (Audio)", Flag = "combatAutoBlock", Default = combatS.autoBlockOn, Callback=function(on) 
         combatS.autoBlockOn=on
+        abDotSetState(on)
         if on then combatSetupSoundWatcher(); combatStartLoops()
         else combatStopLoops() end
     end, Type = "Checkbox"})
@@ -3147,20 +3419,163 @@ sec_018:Slider({ Title = "Facing Visual Size", Flag = "combatFacingSize", Value 
     end
 })
 
-local sec_019 = tabGuest1337:Section({ Title = "Character Lock", Opened = true })
+local sec_019 = tabGuest1337:Section({ Title = "Aim Punch Lock", Opened = true })
 
-sec_019:Toggle({ Title = "Lock On Punch", Flag = "combatLockOn", Default = combatS.charLockOn, Callback=function(on) combatS.charLockOn=on end, Type = "Checkbox"})
+sec_019:Toggle({ Title = "Aim Punch", Flag = "combatAimPunch", Default = combatS.aimPunchActive,
+    Callback = function(on)
+        combatS.aimPunchActive = on
+        if on and lp.Character then combatSetupAimPunch(lp.Character) end
+        if not on and combatAimConnection then combatAimConnection:Disconnect(); combatAimConnection = nil end
+    end, Type = "Checkbox"})
 
-sec_019:Slider({ Title = "Lock Duration (s)", Flag = "combatLockDur", Value = {Min=0.05,Max=1.0,Default=combatS.lockDuration}, Step = 0.05, Callback=function(v) combatS.lockDuration=v end
-})
+sec_019:Slider({ Title = "Punch Prediction", Flag = "combatPunchPred", Step = 0.1,
+    Value = { Min = 0, Max = 10, Default = combatS.punchPrediction },
+    Callback = function(v) combatS.punchPrediction = v end })
 
-sec_019:Slider({ Title = "Lock Max Distance", Flag = "combatLockDist", Value = {Min=5,Max=100,Default=combatS.lockMaxDist}, Step = 5, Callback=function(v) combatS.lockMaxDist=v end 
-})
-
-sec_019:Slider({ Title = "Prediction", Flag = "combatPrediction", Value = {Min=0,Max=15,Default=combatS.predictionVal}, Step = 0.5, Callback=function(v) combatS.predictionVal=v end 
-})
+sec_019:Slider({ Title = "Aim Duration (s)", Flag = "combatAimDur", Step = 0.05,
+    Value = { Min = 0.1, Max = 2.0, Default = combatS.aimPunchDuration },
+    Callback = function(v) combatS.aimPunchDuration = v end })
 
 -- End of Guest1337 Combat Section
+
+------------------------------------------------------------------------
+-- SETTINGS TAB: Interface / Chat Logger / Anti-Taph
+-- (added here because combatS must be in scope)
+------------------------------------------------------------------------
+-- ── AB indicator dot ────────────────────────────────────────────────
+local _abDotGui = nil
+local _abDotBtn = nil
+local _abDotDragging, _abDotDragStart, _abDotDragPos = false, nil, nil
+local _settingsAbToggle = nil  -- assigned below after secInterface toggle is created
+
+local function abDotSetState(on)
+    if _abDotBtn then
+        _abDotBtn.BackgroundColor3 = on
+            and Color3.fromRGB(40, 200, 80)   -- green = AB on
+            or  Color3.fromRGB(200, 40, 40)   -- red   = AB off
+        _abDotBtn.Text = on and "AB" or "ab"
+        _abDotBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    end
+    -- sync Guest 1337 toggle visually
+    if _g1337AbToggle then
+        pcall(function() _g1337AbToggle:Set(on) end)
+    end
+    -- sync Settings tab toggle visually
+    if _settingsAbToggle then
+        pcall(function() _settingsAbToggle:Set(on) end)
+    end
+end
+
+local function abDotCreate()
+    if _abDotGui and _abDotGui.Parent then return end
+    local pg = lp:FindFirstChildOfClass("PlayerGui"); if not pg then return end
+
+    _abDotGui = Instance.new("ScreenGui")
+    _abDotGui.Name           = "ABDotGui"
+    _abDotGui.ResetOnSpawn   = false
+    _abDotGui.DisplayOrder   = 20
+    _abDotGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    _abDotGui.Parent         = pg
+
+    _abDotBtn = Instance.new("TextButton")
+    _abDotBtn.Size                  = UDim2.new(0, 52, 0, 52)
+    _abDotBtn.Position              = UDim2.new(1, -64, 0.5, -26)
+    _abDotBtn.AnchorPoint           = Vector2.new(0, 0)
+    _abDotBtn.BackgroundColor3      = Color3.fromRGB(200, 40, 40)
+    _abDotBtn.BackgroundTransparency = 0
+    _abDotBtn.BorderSizePixel       = 0
+    _abDotBtn.Text                  = "ab"
+    _abDotBtn.TextColor3            = Color3.fromRGB(255, 255, 255)
+    _abDotBtn.TextSize              = 13
+    _abDotBtn.Font                  = Enum.Font.GothamBold
+    _abDotBtn.AutoButtonColor       = false
+    _abDotBtn.Parent                = _abDotGui
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(1, 0)   -- full circle
+    corner.Parent = _abDotBtn
+
+    -- toggle on tap (dot stays visible; only destroyed when Settings toggle is turned off)
+    _abDotBtn.MouseButton1Click:Connect(function()
+        if _abDotDragging then return end
+        combatS.autoBlockOn = not combatS.autoBlockOn
+        abDotSetState(combatS.autoBlockOn)
+        if combatS.autoBlockOn then
+            combatSetupSoundWatcher(); combatStartLoops()
+        else
+            combatStopLoops()
+        end
+    end)
+
+    -- drag (only moves when button is actually held, ignores scroll)
+    local _abMouseHeld = false
+    _abDotBtn.InputBegan:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1
+        or inp.UserInputType == Enum.UserInputType.Touch then
+            _abMouseHeld    = true
+            _abDotDragging  = false
+            _abDotDragStart = inp.Position
+            _abDotDragPos   = _abDotBtn.Position
+        end
+    end)
+    _abDotBtn.InputEnded:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1
+        or inp.UserInputType == Enum.UserInputType.Touch then
+            _abMouseHeld    = false
+            _abDotDragStart = nil
+            task.delay(0.05, function() _abDotDragging = false end)
+        end
+    end)
+    svc.Input.InputChanged:Connect(function(inp)
+        if not _abMouseHeld or not _abDotDragStart then return end
+        if inp.UserInputType ~= Enum.UserInputType.MouseMovement
+        and inp.UserInputType ~= Enum.UserInputType.Touch then return end
+        local delta = inp.Position - _abDotDragStart
+        if delta.Magnitude > 6 then _abDotDragging = true end
+        if _abDotDragging and _abDotBtn and _abDotBtn.Parent then
+            _abDotBtn.Position = UDim2.new(
+                _abDotDragPos.X.Scale, _abDotDragPos.X.Offset + delta.X,
+                _abDotDragPos.Y.Scale, _abDotDragPos.Y.Offset + delta.Y
+            )
+        end
+    end)
+
+    abDotSetState(combatS.autoBlockOn)
+end
+
+local function abDotDestroy()
+    -- removed: dot is permanent once created
+end
+
+_settingsAbToggle = secInterface:Toggle({ Title = "Auto Block", Type = "Checkbox", Flag = "settingsAutoBlock", Default = combatS.autoBlockOn,
+    Callback = function(on)
+        combatS.autoBlockOn = on
+        abDotSetState(on)
+        if on then
+            combatSetupSoundWatcher(); combatStartLoops()
+            abDotCreate()
+        else
+            combatStopLoops()
+        end
+    end
+})
+
+local secChatLogger = tabSettings:Section({ Title = "Chat Logger", Opened = true })
+secChatLogger:Toggle({ Title = "Enable Chat Logger", Type = "Checkbox", Flag = "chatLogEnabled", Default = chatLogEnabled,
+    Callback = function(on)
+        chatLogEnabled = on
+        if on then ChatLogger.setup() else ChatLogger.cleanup() end
+    end
+})
+secChatLogger:Button({ Title = "Show / Hide Window", Callback = function() ChatLogger.toggle() end })
+secChatLogger:Button({ Title = "Clear Log",          Callback = function() ChatLogger.clear()  end })
+
+local secAntiTaph = tabSettings:Section({ Title = "Anti-Taph", Opened = true })
+secAntiTaph:Toggle({ Title = "Remove Blindness / Effects", Type = "Checkbox", Flag = "antiTaphEnabled", Default = antiTaphEnabled,
+    Callback = function(on)
+        antiTaphEnabled = on
+        if on then AntiTaph.apply() else AntiTaph.remove() end
+    end
+})
 
 -- TAB: INTERFACE
 ------------------------------------------------------------------------
@@ -3196,7 +3611,11 @@ task.spawn(function()
         if mset.pizza  then task.spawn(scanPizza)   end
         if mset.zombie then task.spawn(scanZombie)  end
         if mset.puddle then task.spawn(scanPuddles) end
-        if music.on    then music.thread = task.spawn(musicMonitor) end
+        if music.on        then music.thread = task.spawn(musicMonitor) end
+        if chatLogEnabled  then ChatLogger.setup()  end
+        if antiTaphEnabled then AntiTaph.apply()    end
+        -- ab dot is always visible regardless of AB state
+        abDotCreate()
     end)
 end)
 
@@ -3206,4 +3625,5 @@ task.spawn(function()
         task.wait(2)
         sakiConfig:Save()
     end
+end)
 end)
