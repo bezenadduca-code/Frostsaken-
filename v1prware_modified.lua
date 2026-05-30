@@ -106,7 +106,132 @@ end
 local tabSettings = win:Tab({ Title = "Settings", Icon = "settings" })
 local secInterface = tabSettings:Section({ Title = "Interface", Opened = true })
 
--- Auto Block and Chat Logger toggles added below after combat section is defined
+-- forward-declare so Settings callbacks work before these are defined
+local combatS = { autoBlockOn = false }
+local chatLogEnabled = false
+local ChatLogger = {}
+
+-- ── AB indicator dot ─────────────────────────────────────────────────
+local _abDotGui = nil
+local _abDotBtn = nil
+local _abDotDragging, _abDotDragStart, _abDotDragPos = false, nil, nil
+local _settingsAbToggle = nil
+local _g1337AbToggle = nil
+
+local function abDotSetState(on)
+    if _abDotBtn then
+        _abDotBtn.BackgroundColor3 = on and Color3.fromRGB(40, 200, 80) or Color3.fromRGB(200, 40, 40)
+        _abDotBtn.Text = on and "AB" or "ab"
+        _abDotBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    end
+    if _g1337AbToggle then pcall(function() _g1337AbToggle:Set(on) end) end
+    if _settingsAbToggle then pcall(function() _settingsAbToggle:Set(on) end) end
+end
+
+local combatSetupSoundWatcher, combatStartLoops, combatStopLoops
+local function abDotCreate()
+    if _abDotGui and _abDotGui.Parent then return end
+    local pg = lp:FindFirstChildOfClass("PlayerGui"); if not pg then return end
+    _abDotGui = Instance.new("ScreenGui")
+    _abDotGui.Name = "ABDotGui"; _abDotGui.ResetOnSpawn = false
+    _abDotGui.DisplayOrder = 20; _abDotGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    _abDotGui.Parent = pg
+    _abDotBtn = Instance.new("TextButton")
+    _abDotBtn.Size = UDim2.new(0, 52, 0, 52); _abDotBtn.Position = UDim2.new(1, -64, 0.5, -26)
+    _abDotBtn.AnchorPoint = Vector2.new(0, 0); _abDotBtn.BackgroundColor3 = Color3.fromRGB(200, 40, 40)
+    _abDotBtn.BackgroundTransparency = 0; _abDotBtn.BorderSizePixel = 0
+    _abDotBtn.Text = "ab"; _abDotBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    _abDotBtn.TextSize = 13; _abDotBtn.Font = Enum.Font.GothamBold
+    _abDotBtn.AutoButtonColor = false; _abDotBtn.Parent = _abDotGui
+    local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(1, 0); corner.Parent = _abDotBtn
+    _abDotBtn.MouseButton1Click:Connect(function()
+        if _abDotDragging then return end
+        combatS.autoBlockOn = not combatS.autoBlockOn
+        abDotSetState(combatS.autoBlockOn)
+        if combatS.autoBlockOn then
+            if combatSetupSoundWatcher then combatSetupSoundWatcher() end
+            if combatStartLoops then combatStartLoops() end
+        else
+            if combatStopLoops then combatStopLoops() end
+        end
+    end)
+    local _abMouseHeld = false
+    _abDotBtn.InputBegan:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+            _abMouseHeld = true; _abDotDragging = false
+            _abDotDragStart = inp.Position; _abDotDragPos = _abDotBtn.Position
+        end
+    end)
+    _abDotBtn.InputEnded:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+            _abMouseHeld = false; _abDotDragStart = nil
+            task.delay(0.05, function() _abDotDragging = false end)
+        end
+    end)
+    svc.Input.InputChanged:Connect(function(inp)
+        if not _abMouseHeld or not _abDotDragStart then return end
+        if inp.UserInputType ~= Enum.UserInputType.MouseMovement and inp.UserInputType ~= Enum.UserInputType.Touch then return end
+        local delta = inp.Position - _abDotDragStart
+        if delta.Magnitude > 6 then _abDotDragging = true end
+        if _abDotDragging and _abDotBtn and _abDotBtn.Parent then
+            _abDotBtn.Position = UDim2.new(_abDotDragPos.X.Scale, _abDotDragPos.X.Offset + delta.X, _abDotDragPos.Y.Scale, _abDotDragPos.Y.Offset + delta.Y)
+        end
+    end)
+    abDotSetState(combatS.autoBlockOn)
+end
+
+_settingsAbToggle = secInterface:Toggle({ Title = "Auto Block", Type = "Checkbox", Flag = "settingsAutoBlock", Default = false,
+    Callback = function(on)
+        combatS.autoBlockOn = on
+        abDotSetState(on)
+        if on then
+            if combatSetupSoundWatcher then combatSetupSoundWatcher() end
+            if combatStartLoops then combatStartLoops() end
+            abDotCreate()
+        else
+            if combatStopLoops then combatStopLoops() end
+        end
+    end
+})
+
+local secChatLogger = tabSettings:Section({ Title = "Chat Logger", Opened = true })
+secChatLogger:Toggle({ Title = "Enable Chat Logger", Type = "Checkbox", Flag = "chatLogEnabled", Default = false,
+    Callback = function(on)
+        chatLogEnabled = on
+        if on then ChatLogger.setup() else ChatLogger.cleanup() end
+    end
+})
+secChatLogger:Button({ Title = "Show / Hide Window", Callback = function() ChatLogger.toggle() end })
+secChatLogger:Button({ Title = "Clear Log",          Callback = function() ChatLogger.clear()  end })
+
+pcall(function()
+    local secFullbright = tabSettings:Section({ Title = "Fullbright", Opened = true })
+    local fbLight = game:GetService("Lighting")
+    local fbConn  = nil
+    local fbOrigAmbient = fbLight.Ambient
+    local fbOrigBottom  = fbLight.ColorShift_Bottom
+    local fbOrigTop     = fbLight.ColorShift_Top
+    local function fbApply()
+        pcall(function()
+            fbLight.Ambient = Color3.new(1,1,1)
+            fbLight.ColorShift_Bottom = Color3.new(1,1,1)
+            fbLight.ColorShift_Top = Color3.new(1,1,1)
+        end)
+    end
+    local function fbRemove()
+        if fbConn then fbConn:Disconnect(); fbConn = nil end
+        pcall(function()
+            fbLight.Ambient = fbOrigAmbient
+            fbLight.ColorShift_Bottom = fbOrigBottom
+            fbLight.ColorShift_Top = fbOrigTop
+        end)
+    end
+    secFullbright:Toggle({ Title = "Fullbright", Type = "Checkbox", Flag = "fullbrightOn", Default = false,
+        Callback = function(on)
+            if on then fbApply(); fbConn = fbLight.LightingChanged:Connect(fbApply) else fbRemove() end
+        end
+    })
+end)
 
 ------------------------------------------------------------------------
 ------------------------------------------------------------------------
@@ -185,10 +310,80 @@ end)
 
 
 ------------------------------------------------------------------------
+-- STATUS EFFECTS
+------------------------------------------------------------------------
+pcall(function()
+    local secStatus = tabGlobal:Section({ Title = "Status", Opened = true })
+    local statusGroups = {
+        Slowness      = { on = false, paths = { "Modules.Schematics.StatusEffects.Slowness" } },
+        Hallucination = { on = false, paths = { "Modules.Schematics.StatusEffects.KillerExclusive.Hallucination" } },
+        Visual        = { on = false, paths = {
+            "Modules.Schematics.StatusEffects.Blindness",
+            "Modules.Schematics.StatusEffects.SurvivorExclusive.Subspaced",
+            "Modules.Schematics.StatusEffects.KillerExclusive.Glitched",
+        }},
+    }
+    local statusBackup = {}
+    local function statusResolve(path)
+        local node = svc.RS
+        for seg in path:gmatch("[^%.]+") do node = node:FindFirstChild(seg); if not node then return nil end end
+        return node
+    end
+    local function statusBlock(path)
+        if statusBackup[path] then return end
+        local mod = statusResolve(path)
+        if not mod then return end
+        if mod:IsA("Folder") then
+            statusBackup[path] = { clone = mod:Clone(), isFolder = true, parentPath = path:match("^(.-)%.?[^%.]+$") }
+            mod:Destroy()
+        elseif mod:IsA("ModuleScript") or mod:IsA("LocalScript") then
+            statusBackup[path] = { clone = mod:Clone(), src = mod.Source, isFolder = false }
+            mod:Destroy()
+        end
+    end
+    local function statusRestore(path)
+        local saved = statusBackup[path]; if not saved then return end
+        local existing = statusResolve(path); if existing then existing:Destroy() end
+        local parentPath = saved.parentPath or path:match("^(.-)%.?[^%.]+$")
+        local parent = statusResolve(parentPath)
+        if parent then
+            if not saved.isFolder then saved.clone.Source = saved.src end
+            saved.clone.Parent = parent
+        end
+        statusBackup[path] = nil
+    end
+    local statusLoopThread = nil
+    local function statusTick()
+        if statusLoopThread then return end
+        statusLoopThread = task.spawn(function()
+            while true do
+                local any = false
+                for _, g in pairs(statusGroups) do
+                    if g.on then any = true; for _, p in ipairs(g.paths) do local m = statusResolve(p); if m then m:Destroy() end end end
+                end
+                if not any then break end; task.wait(0.8)
+            end; statusLoopThread = nil
+        end)
+    end
+    local function statusToggle(name)
+        local g = statusGroups[name]; if not g then return end; g.on = not g.on
+        for _, p in ipairs(g.paths) do if g.on then statusBlock(p) else statusRestore(p) end end
+        local any = false; for _, sg in pairs(statusGroups) do if sg.on then any = true; break end end
+        if any then statusTick() elseif statusLoopThread then task.cancel(statusLoopThread); statusLoopThread = nil end
+    end
+    secStatus:Button({ Title = "Toggle: Slowness",       Callback = function() statusToggle("Slowness")      end })
+    secStatus:Button({ Title = "Toggle: Hallucination",  Callback = function() statusToggle("Hallucination") end })
+    secStatus:Button({ Title = "Toggle: Visual Effects", Callback = function() statusToggle("Visual")        end })
+    lp.CharacterAdded:Connect(function()
+        statusBackup = {}; for _, g in pairs(statusGroups) do g.on = false end
+        if statusLoopThread then task.cancel(statusLoopThread); statusLoopThread = nil end
+    end)
+end)
+
+------------------------------------------------------------------------
 -- CHAT LOGGER MODULE (ported from lovesaken)
 ------------------------------------------------------------------------
-local chatLogEnabled = false
-local ChatLogger = {}
+-- chatLogEnabled and ChatLogger forward-declared above
 do
     local chatConnections = {}
     local chatWindow      = nil
@@ -1195,6 +1390,94 @@ secMinion:Toggle({ Title="1x1x1x1 Zombies",       Desc="1x1x1x1Zombie — green 
 secMinion:Toggle({ Title="JD Digital Footprints", Desc="Black disc + red glow",               Type="Checkbox", Flag="espPuddle",     Default=mset.puddle, Callback=function(on) mset.puddle=on; if on then scanPuddles() else clearTag("puddle") end end })
 secMinion:Slider({ Title="Highlight Transparency", Flag="espMinionTrans", Step=0.05, Value={Min=0,Max=1,Default=mset.transparency}, Callback=function(v) mset.transparency=v; updateTransparency() end })
 secMinion:Button({ Title="🔄 Force Rescan", Callback=function() clearTag("pizza"); clearTag("zombie"); clearTag("puddle"); task.wait(0.1); scanPizza(); scanZombie(); scanPuddles() end })
+
+------------------------------------------------------------------------
+-- Document / Ring ESP
+------------------------------------------------------------------------
+pcall(function()
+    local docESPEnabled = false
+    local docCurrentESP = nil
+    local docCurrentBillboard = nil
+
+    local function docRemoveESP()
+        pcall(function()
+            if docCurrentESP and docCurrentESP.Parent then docCurrentESP:Destroy() end
+            if docCurrentBillboard and docCurrentBillboard.Parent then docCurrentBillboard:Destroy() end
+        end)
+        docCurrentESP = nil
+        docCurrentBillboard = nil
+    end
+
+    local function docMakeESP(obj)
+        pcall(function()
+            if docCurrentESP then return end
+            if not docESPEnabled then return end
+            if not obj:IsA("MeshPart") then return end
+            local prompt = obj:FindFirstChildOfClass("ProximityPrompt")
+            if not prompt then return end
+            local txt = ((prompt.ActionText or "") .. " " .. (prompt.ObjectText or "")):lower()
+            local itemType = nil
+            if txt:find("collect") or txt:find("document") or txt:find("folder") then itemType = "DOCUMENT" end
+            if txt:find("ring") then itemType = "RING" end
+            if not itemType then return end
+            local h = Instance.new("Highlight")
+            h.Name = "ForsakenESP"
+            h.FillColor = itemType == "RING" and Color3.fromRGB(255,215,0) or Color3.fromRGB(255,255,0)
+            h.OutlineColor = Color3.fromRGB(255,255,255)
+            h.FillTransparency = 0.15
+            h.OutlineTransparency = 0
+            h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+            h.Parent = obj
+            local bill = Instance.new("BillboardGui")
+            bill.Name = "ESPBillboard"
+            bill.Size = UDim2.new(0,80,0,20)
+            bill.StudsOffset = Vector3.new(0,2,0)
+            bill.AlwaysOnTop = true
+            bill.MaxDistance = 9999
+            bill.Parent = obj
+            local label = Instance.new("TextLabel")
+            label.BackgroundTransparency = 1
+            label.Size = UDim2.new(1,0,1,0)
+            label.Text = itemType
+            label.TextScaled = false
+            label.TextSize = 14
+            label.Font = Enum.Font.GothamBold
+            label.TextColor3 = itemType == "RING" and Color3.fromRGB(255,215,0) or Color3.fromRGB(255,255,0)
+            label.TextStrokeTransparency = 0
+            label.TextStrokeColor3 = Color3.new(0,0,0)
+            label.Parent = bill
+            docCurrentESP = h
+            docCurrentBillboard = bill
+        end)
+    end
+
+    local function docScan(v)
+        if v:IsA("MeshPart") then docMakeESP(v) end
+    end
+
+    local secDocESP = tabVisual:Section({ Title = "Document / Ring ESP", Opened = true })
+    secDocESP:Toggle({
+        Title = "Document / Ring ESP",
+        Type = "Checkbox",
+        Flag = "docESPOn",
+        Default = false,
+        Callback = function(state)
+            docESPEnabled = state
+            if not state then docRemoveESP(); return end
+            docRemoveESP()
+            for _, v in ipairs(svc.WS:GetDescendants()) do
+                if docCurrentESP then break end
+                docScan(v)
+            end
+        end
+    })
+
+    svc.WS.DescendantAdded:Connect(function(v)
+        if not docESPEnabled then return end
+        task.wait(0.1)
+        if docESPEnabled and not docCurrentESP then docScan(v) end
+    end)
+end)
 
 ------------------------------------------------------------------------
 ------------------------------------------------------------------------
@@ -2673,27 +2956,26 @@ local tabGuest1337 = win:Tab({ Title = "Guest 1337", Icon = "shield" })
 local sec_015 = tabGuest1337:Section({ Title = "Auto Block & Combat", Opened = true })
 
 -- Settings
-local combatS = {
-    autoBlockOn = false,
-    blockType = "Block",
-    detectionRange = 18,
-    blockDelay = 0,
-    doubleBlock = true,
-    antiBait = false,
-    abMissChance = 0,
-    autoPunchOn = false,
-    hdtEnabled = false,
-    hdtSpeed = 12,
-    hdtDelay = 0,
-    hdtMissChance = 0,
-    killerCircles = false,
-    facingCheck = true,
-    facingVisual = false,
-    facingVisRadius = 3,
-    aimPunchActive   = false,
-    punchPrediction  = 2.3,
-    aimPunchDuration = 0.5,
-}
+-- populate the forward-declared combatS with all fields
+combatS.blockType = "Block"
+combatS.detectionRange = 18
+combatS.blockDelay = 0
+combatS.doubleBlock = true
+combatS.antiBait = false
+combatS.abMissChance = 0
+combatS.autoPunchOn = false
+combatS.hdtEnabled = false
+combatS.hdtFlickSpeed = 22
+combatS.hdtFlickDuration = 1.0
+combatS.hdtMissChance = 0
+combatS.hdtMoveSpeed = 26
+combatS.killerCircles = false
+combatS.facingCheck = true
+combatS.facingVisual = false
+combatS.facingVisRadius = 3
+combatS.aimPunchActive = false
+combatS.punchPrediction = 2.3
+combatS.aimPunchDuration = 0.5
 
 local TRIGGER_SOUNDS = {
     ["140242176732868"]=true,["136323728355613"]=true,
@@ -2718,13 +3000,14 @@ local TRIGGER_SOUNDS = {
     ["5148302439"]=true,     ["98675142200448"]=true, ["128367348686124"]=true,["71805956520207"]=true,
     ["125213046326879"]=true,["103684883268194"]=true,["109246041199659"]=true,
     ["80540530406270"]=true, ["139523195429581"]=true,["105204810054381"]=true,["114742322778642"]=true,
-    ["116468089135195"]=true,["112809109188560"]=true,["106727013904874"]=true,
+    ["116468089135195"]=true,["112809109188560"]=true,["109348678063422"]=true,
 }
 
 -- Block anim IDs for HDT detection
 local BLOCK_ANIMS = {
     ["72722244508749"]=true,["96959123077498"]=true,["95802026624883"]=true,
     ["100926346851492"]=true,["120748030255574"]=true,
+    ["127040663332045"]=true,
 }
 
 local BAIT_KILLERS = {"John Doe","Slasher","c00lkidd","Jason","1x1x1x1","Noli","Sixer","Nosferatu"}
@@ -2810,7 +3093,8 @@ local combatTrackedPunchAnimations = {
     ["86709774283672"]=true, ["108807732150251"]=true,["138040001965654"]=true,["86096387000557"]=true,
     ["81905101227053"]=true, ["127777649118195"]=true,["99100240941590"]=true, ["92831180929659"]=true,
     ["112081768119093"]=true,["117587689359268"]=true,["91830732867282"]=true, ["91730605416216"]=true,
-    ["100184164753080"]=true,
+    ["100184164753080"]=true,["133475256598240"]=true,
+    ["72007882634344"]=true,
 }
 
 -- Aim Punch state
@@ -3039,7 +3323,7 @@ local function combatHookExistingSounds()
     end
 end
 
-local function combatSetupSoundWatcher()
+combatSetupSoundWatcher = function()
     task.spawn(function()
         local playersFolder = svc.WS:FindFirstChild("Players")
         if not playersFolder then
@@ -3080,92 +3364,85 @@ combatGetKillerHRP = function(killerModel)
     return killerModel:FindFirstChildWhichIsA("BasePart", true)
 end
 
--- Improved drag: saves/restores WalkSpeed AND JumpPower, no blocking 180-flip,
--- tracks target HRP dynamically each Heartbeat tick (mirrors beginDragIntoKiller).
-local function combatHDTBeginDrag(killerModel)
-    if _combatHDTDebounce then return end
-    if not killerModel or not killerModel.Parent then return end
-    local char = lp.Character; if not char then return end
-    local hrp  = char:FindFirstChild("HumanoidRootPart")
-    local hum  = char:FindFirstChildOfClass("Humanoid")
-    if not hrp or not hum then return end
+local combatHDTDragging = false
 
-    local targetHRP = combatGetKillerHRP(killerModel)
-    if not targetHRP then return end
+local function combatHDTBeginDrag(killerModel, blockTrack)
+    pcall(function()
+        if combatHDTDragging then return end
+        if combatRollMiss(combatS.hdtMissChance) then return end
 
-    if combatRollMiss(combatS.hdtMissChance) then return end
+        combatHDTDragging = true
 
-    _combatHDTDebounce = true
-
-    -- Save locomotion state (WalkSpeed + JumpPower so they are both restored cleanly)
-    local oldWalk         = hum.WalkSpeed
-    local oldJump         = hum.JumpPower
-    local oldPlatformStand = hum.PlatformStand
-
-    hum.WalkSpeed     = 0
-    hum.JumpPower     = 0
-    hum.PlatformStand = false  -- keep physics so BodyVelocity works
-
-    -- BodyVelocity to push the player toward the killer horizontally
-    local bv = Instance.new("BodyVelocity")
-    bv.MaxForce = Vector3.new(1e5, 0, 1e5)
-    bv.Velocity = Vector3.new(0, 0, 0)
-    bv.Parent   = hrp
-
-    local conn
-    conn = svc.Run.Heartbeat:Connect(function(dt)
-        if not _combatHDTDebounce then
-            conn:Disconnect()
-            if bv and bv.Parent then pcall(function() bv:Destroy() end) end
-            hum.WalkSpeed      = oldWalk
-            hum.JumpPower      = oldJump
-            hum.PlatformStand  = oldPlatformStand
+        local char = lp.Character
+        if not char or not killerModel then
+            combatHDTDragging = false
             return
         end
 
-        -- abort if character or killer was removed
-        if not (char and char.Parent) or not (killerModel and killerModel.Parent) then
-            _combatHDTDebounce = false; return
+        local hrp        = char:FindFirstChild("HumanoidRootPart")
+        local hum        = char:FindFirstChildOfClass("Humanoid")
+        local killerRoot = killerModel:FindFirstChild("HumanoidRootPart") or killerModel.PrimaryPart
+
+        if not hrp or not hum or not killerRoot then
+            combatHDTDragging = false
+            return
         end
 
-        -- refresh target HRP each tick (killer may respawn/teleport)
-        targetHRP = combatGetKillerHRP(killerModel)
-        if not targetHRP then _combatHDTDebounce = false; return end
+        local origSpeed = hum.WalkSpeed
+        local origJump  = hum.JumpPower
 
-        local toTarget = targetHRP.Position - hrp.Position
-        local horiz    = Vector3.new(toTarget.X, 0, toTarget.Z)
-        if horiz.Magnitude > 0.01 then
-            local dir = horiz.Unit
-            bv.Velocity = Vector3.new(dir.X * combatS.hdtSpeed, bv.Velocity.Y, dir.Z * combatS.hdtSpeed)
-        else
-            bv.Velocity = Vector3.new(0, bv.Velocity.Y, 0)
-        end
+        -- Disable Roblox control module so player input cannot fight MoveTo
+        local controls = nil
+        pcall(function()
+            controls = require(lp.PlayerScripts.PlayerModule):GetControls()
+            controls:Disable()
+        end)
 
-        -- stop when close enough
-        if toTarget.Magnitude <= 2.0 then
-            _combatHDTDebounce = false
-        end
-    end)
+        -- Freeze sprint module so it cannot write WalkSpeed back
+        local sprintMod = nil
+        local origSprintSpeed, origMaxSprint
+        pcall(function()
+            sprintMod = require(svc.RS.Systems.Character.Game.Sprinting)
+            origSprintSpeed = sprintMod.SprintSpeed
+            origMaxSprint   = sprintMod.MaxSprintSpeed
+            sprintMod.SprintSpeed    = 0
+            sprintMod.MaxSprintSpeed = 0
+        end)
 
-    -- Aim at killer during drag (non-blocking, runs in its own thread)
-    task.spawn(function()
-        hum.AutoRotate = false
-        local sw = tick()
-        while tick() - sw < 0.4 do
+        local stopped = false
+
+        local function stopMove()
+            if stopped then return end
+            stopped = true
             pcall(function()
-                local nk = combatGetNearestKiller()
-                if nk and hrp and hrp.Parent then
-                    local tHRP2 = combatGetKillerHRP(nk)
-                    if tHRP2 then hrp.CFrame = CFrame.lookAt(hrp.Position, tHRP2.Position) end
+                if sprintMod then
+                    sprintMod.SprintSpeed    = origSprintSpeed or 26
+                    sprintMod.MaxSprintSpeed = origMaxSprint   or 26
                 end
             end)
-            task.wait()
+            pcall(function()
+                if controls then controls:Enable() end
+            end)
+            hum.WalkSpeed = origSpeed
+            hum.JumpPower = origJump
+            hum:MoveTo(hrp.Position)
+            combatHDTDragging = false
         end
-        hum.AutoRotate = true
-    end)
-    -- Hard timeout (safety net so debounce never gets stuck)
-    task.delay(0.4, function()
-        if _combatHDTDebounce then _combatHDTDebounce = false end
+
+        -- Stop when block animation ends
+        if blockTrack then
+            blockTrack.Stopped:Connect(stopMove)
+        end
+
+        -- MoveTo now runs completely unopposed
+        hum.WalkSpeed = combatS.hdtMoveSpeed
+        hum:MoveTo(killerRoot.Position)
+
+        -- Safety fallback
+        task.spawn(function()
+            hum.MoveToFinished:Wait()
+            stopMove()
+        end)
     end)
 end
 
@@ -3178,14 +3455,13 @@ local function combatOnBlockAnim(track)
         if not id or not BLOCK_ANIMS[id] then return end
 
         -- HDT
-        if combatS.hdtEnabled and not _combatHDTDebounce then
+        if combatS.hdtEnabled and not combatHDTDragging then
             local now = tick(); if now - combatHDTLastTime >= HDT_CD then
                 combatHDTLastTime = now
                 local nearest = combatGetNearestKiller()
                 if nearest then
                     task.spawn(function()
-                        if combatS.hdtDelay > 0 then task.wait(combatS.hdtDelay) end
-                        combatHDTBeginDrag(nearest)
+                        combatHDTBeginDrag(nearest, track)
                     end)
                 end
             end
@@ -3282,7 +3558,7 @@ end
 local combatSoundTickConn = nil
 local combatVisualTickConn = nil
 
-local function combatStartLoops()
+combatStartLoops = function()
     -- Sound cleanup tick (detection is now event-driven via combatHookSound)
     if combatSoundTickConn then combatSoundTickConn:Disconnect() end
     combatSoundTickConn = svc.Run.Heartbeat:Connect(function()
@@ -3302,7 +3578,7 @@ local function combatStartLoops()
     end)
 end
 
-local function combatStopLoops()
+combatStopLoops = function()
     if combatSoundTickConn then combatSoundTickConn:Disconnect(); combatSoundTickConn = nil end
     if combatVisualTickConn then combatVisualTickConn:Disconnect(); combatVisualTickConn = nil end
     -- Cleanup visuals
@@ -3382,13 +3658,13 @@ local sec_017 = tabGuest1337:Section({ Title = "HDT (Hitbox Dragging)", Opened =
 
 sec_017:Toggle({ Title = "Enable HDT", Flag = "combatHDT", Default = combatS.hdtEnabled, Callback=function(on) combatS.hdtEnabled=on end, Type = "Checkbox"})
 
-sec_017:Slider({ Title = "HDT Speed", Flag = "combatHDTSpeed", Value = {Min=1,Max=30,Default=combatS.hdtSpeed}, Step = 0.5, Callback=function(v) combatS.hdtSpeed=v end 
+sec_017:Slider({ Title = "Sprint Speed", Flag = "combatHDTMoveSpeed", Value = {Min=1,Max=100,Default=combatS.hdtMoveSpeed}, Step = 1, Callback=function(v) combatS.hdtMoveSpeed=v end
 })
 
-sec_017:Slider({ Title = "HDT Delay (s)", Flag = "combatHDTDelay", Value = {Min=0,Max=0.5,Default=combatS.hdtDelay}, Step = 0.01, Callback=function(v) combatS.hdtDelay=v end 
+sec_017:Slider({ Title = "Move Duration (s)", Flag = "combatHDTFlickDur", Value = {Min=0.1,Max=3.0,Default=combatS.hdtFlickDuration}, Step = 0.1, Callback=function(v) combatS.hdtFlickDuration=v end
 })
 
-sec_017:Slider({ Title = "HDT Miss Chance %", Flag = "combatHDTMiss", Value = {Min=0,Max=100,Default=combatS.hdtMissChance}, Step = 1, Callback=function(v) combatS.hdtMissChance=v end 
+sec_017:Slider({ Title = "HDT Miss Chance %", Flag = "combatHDTMiss", Value = {Min=0,Max=100,Default=combatS.hdtMissChance}, Step = 1, Callback=function(v) combatS.hdtMissChance=v end
 })
 
 local sec_018 = tabGuest1337:Section({ Title = "Vision", Opened = true })
@@ -3439,143 +3715,237 @@ sec_019:Slider({ Title = "Aim Duration (s)", Flag = "combatAimDur", Step = 0.05,
 -- End of Guest1337 Combat Section
 
 ------------------------------------------------------------------------
--- SETTINGS TAB: Interface / Chat Logger / Anti-Taph
--- (added here because combatS must be in scope)
+-- TAB: TWO-TIME (Dagger / Flank)
 ------------------------------------------------------------------------
--- ── AB indicator dot ────────────────────────────────────────────────
-local _abDotGui = nil
-local _abDotBtn = nil
-local _abDotDragging, _abDotDragStart, _abDotDragPos = false, nil, nil
-local _settingsAbToggle = nil  -- assigned below after secInterface toggle is created
+pcall(function()
+local Event = svc.RS.Modules.Network.Network.RemoteEvent
+local ttS = {
+    enabled           = false,
+    range             = 15,
+    showCircle        = true,
+    circleColor       = Color3.fromRGB(255, 100, 200),
+    lungeHoldDuration = 0.25,
+    triggerDelay      = 0.0,
+    flipDelay         = 0.3,
+    noclipKillers     = false,
+}
 
-local function abDotSetState(on)
-    if _abDotBtn then
-        _abDotBtn.BackgroundColor3 = on
-            and Color3.fromRGB(40, 200, 80)   -- green = AB on
-            or  Color3.fromRGB(200, 40, 40)   -- red   = AB off
-        _abDotBtn.Text = on and "AB" or "ab"
-        _abDotBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+local tabTT  = win:Tab({ Title = "Two-Time", Icon = "zap" })
+local secTT  = tabTT:Section({ Title = "Dagger Config", Opened = true })
+
+secTT:Toggle({ Title = "Enabled", Type = "Checkbox", Flag = "ttEnabled", Default = false,
+    Callback = function(v) ttS.enabled = v end })
+
+secTT:Slider({ Title = "Range (studs)", Flag = "ttRange", Step = 1,
+    Value = { Min = 5, Max = 50, Default = 15 },
+    Callback = function(v) ttS.range = v end })
+
+secTT:Slider({ Title = "Trigger Delay (s)", Flag = "ttTrigDelay", Step = 0.05,
+    Value = { Min = 0.0, Max = 5.0, Default = 0.0 },
+    Callback = function(v) ttS.triggerDelay = v end })
+
+secTT:Slider({ Title = "Flip Delay (s)", Flag = "ttFlipDelay", Step = 0.01,
+    Value = { Min = 0.0, Max = 1.0, Default = 0.3 },
+    Callback = function(v) ttS.flipDelay = v end })
+
+secTT:Slider({ Title = "Lunge Hold (s)", Flag = "ttLungeHold", Step = 0.005,
+    Value = { Min = 0.05, Max = 0.25, Default = 0.25 },
+    Callback = function(v) ttS.lungeHoldDuration = v end })
+
+local ttCircles = {}
+
+secTT:Toggle({ Title = "Show Circle", Type = "Checkbox", Flag = "ttCircle", Default = true,
+    Callback = function(v)
+        ttS.showCircle = v
+        if not v then
+            for _, c in pairs(ttCircles) do pcall(function() c:Destroy() end) end
+            ttCircles = {}
+        end
+    end })
+
+local function ttGetKillersFolder()
+    local p = svc.WS:FindFirstChild("Players")
+    return p and p:FindFirstChild("Killers")
+end
+
+secTT:Toggle({ Title = "Noclip Killers", Type = "Checkbox", Flag = "ttNoclip", Default = false,
+    Callback = function(v)
+        ttS.noclipKillers = v
+        if not v then
+            local kf = ttGetKillersFolder()
+            if kf then
+                for _, k in pairs(kf:GetChildren()) do
+                    for _, part in ipairs(k:GetDescendants()) do
+                        if part:IsA("BasePart") then
+                            pcall(function() part.CanCollide = true end)
+                        end
+                    end
+                end
+            end
+        end
+    end })
+
+-- Helpers
+local function ttGetNearestKiller()
+    local myChar = lp.Character
+    local myHRP  = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    if not myHRP then return nil, nil end
+    local kf = ttGetKillersFolder()
+    if not kf then return nil, nil end
+    local closest, closestHRP, closestDist = nil, nil, math.huge
+    for _, k in pairs(kf:GetChildren()) do
+        local hrp = k:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            local dist = (hrp.Position - myHRP.Position).Magnitude
+            if dist < closestDist then
+                closestDist = dist; closest = k; closestHRP = hrp
+            end
+        end
     end
-    -- sync Guest 1337 toggle visually
-    if _g1337AbToggle then
-        pcall(function() _g1337AbToggle:Set(on) end)
+    return closest, closestHRP, closestDist
+end
+
+local function ttSetAutoRotate(val)
+    local char = lp.Character
+    if not char then return end
+    local hum = char:FindFirstChildWhichIsA("Humanoid")
+    if hum then pcall(function() hum.AutoRotate = val end) end
+end
+
+-- Noclip loop
+svc.Run.Stepped:Connect(function()
+    if not ttS.noclipKillers then return end
+    local kf = ttGetKillersFolder()
+    if not kf then return end
+    for _, k in pairs(kf:GetChildren()) do
+        for _, part in ipairs(k:GetDescendants()) do
+            if part:IsA("BasePart") and part.CanCollide then
+                pcall(function() part.CanCollide = false end)
+            end
+        end
     end
-    -- sync Settings tab toggle visually
-    if _settingsAbToggle then
-        pcall(function() _settingsAbToggle:Set(on) end)
+end)
+
+-- Circle update
+local function ttUpdateCircles()
+    local kf = ttGetKillersFolder()
+    if not kf then return end
+    for _, k in pairs(kf:GetChildren()) do
+        local hrp = k:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            if ttS.showCircle and ttS.enabled then
+                if not ttCircles[k] then
+                    pcall(function()
+                        local c = Instance.new("CylinderHandleAdornment")
+                        c.Name         = "TwoTimeCircle"
+                        c.Adornee      = hrp
+                        c.Color3       = ttS.circleColor
+                        c.AlwaysOnTop  = true
+                        c.ZIndex       = 1
+                        c.Transparency = 0.5
+                        c.Radius       = ttS.range
+                        c.Height       = 0.12
+                        c.CFrame       = CFrame.new(0, -(hrp.Size.Y / 2 + 0.05), 0) * CFrame.Angles(math.rad(90), 0, 0)
+                        c.Parent       = hrp
+                        ttCircles[k]   = c
+                    end)
+                else
+                    ttCircles[k].Radius = ttS.range
+                end
+            else
+                if ttCircles[k] then
+                    pcall(function() ttCircles[k]:Destroy() end)
+                    ttCircles[k] = nil
+                end
+            end
+        end
+    end
+    for k, c in pairs(ttCircles) do
+        if not k.Parent or not k:FindFirstChild("HumanoidRootPart") then
+            pcall(function() c:Destroy() end)
+            ttCircles[k] = nil
+        end
     end
 end
 
-local function abDotCreate()
-    if _abDotGui and _abDotGui.Parent then return end
-    local pg = lp:FindFirstChildOfClass("PlayerGui"); if not pg then return end
-
-    _abDotGui = Instance.new("ScreenGui")
-    _abDotGui.Name           = "ABDotGui"
-    _abDotGui.ResetOnSpawn   = false
-    _abDotGui.DisplayOrder   = 20
-    _abDotGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    _abDotGui.Parent         = pg
-
-    _abDotBtn = Instance.new("TextButton")
-    _abDotBtn.Size                  = UDim2.new(0, 52, 0, 52)
-    _abDotBtn.Position              = UDim2.new(1, -64, 0.5, -26)
-    _abDotBtn.AnchorPoint           = Vector2.new(0, 0)
-    _abDotBtn.BackgroundColor3      = Color3.fromRGB(200, 40, 40)
-    _abDotBtn.BackgroundTransparency = 0
-    _abDotBtn.BorderSizePixel       = 0
-    _abDotBtn.Text                  = "ab"
-    _abDotBtn.TextColor3            = Color3.fromRGB(255, 255, 255)
-    _abDotBtn.TextSize              = 13
-    _abDotBtn.Font                  = Enum.Font.GothamBold
-    _abDotBtn.AutoButtonColor       = false
-    _abDotBtn.Parent                = _abDotGui
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(1, 0)   -- full circle
-    corner.Parent = _abDotBtn
-
-    -- toggle on tap (dot stays visible; only destroyed when Settings toggle is turned off)
-    _abDotBtn.MouseButton1Click:Connect(function()
-        if _abDotDragging then return end
-        combatS.autoBlockOn = not combatS.autoBlockOn
-        abDotSetState(combatS.autoBlockOn)
-        if combatS.autoBlockOn then
-            combatSetupSoundWatcher(); combatStartLoops()
-        else
-            combatStopLoops()
-        end
-    end)
-
-    -- drag (only moves when button is actually held, ignores scroll)
-    local _abMouseHeld = false
-    _abDotBtn.InputBegan:Connect(function(inp)
-        if inp.UserInputType == Enum.UserInputType.MouseButton1
-        or inp.UserInputType == Enum.UserInputType.Touch then
-            _abMouseHeld    = true
-            _abDotDragging  = false
-            _abDotDragStart = inp.Position
-            _abDotDragPos   = _abDotBtn.Position
-        end
-    end)
-    _abDotBtn.InputEnded:Connect(function(inp)
-        if inp.UserInputType == Enum.UserInputType.MouseButton1
-        or inp.UserInputType == Enum.UserInputType.Touch then
-            _abMouseHeld    = false
-            _abDotDragStart = nil
-            task.delay(0.05, function() _abDotDragging = false end)
-        end
-    end)
-    svc.Input.InputChanged:Connect(function(inp)
-        if not _abMouseHeld or not _abDotDragStart then return end
-        if inp.UserInputType ~= Enum.UserInputType.MouseMovement
-        and inp.UserInputType ~= Enum.UserInputType.Touch then return end
-        local delta = inp.Position - _abDotDragStart
-        if delta.Magnitude > 6 then _abDotDragging = true end
-        if _abDotDragging and _abDotBtn and _abDotBtn.Parent then
-            _abDotBtn.Position = UDim2.new(
-                _abDotDragPos.X.Scale, _abDotDragPos.X.Offset + delta.X,
-                _abDotDragPos.Y.Scale, _abDotDragPos.Y.Offset + delta.Y
-            )
-        end
-    end)
-
-    abDotSetState(combatS.autoBlockOn)
+-- Fire dagger
+local function ttFireDagger()
+    if not Event then return end
+    local buf = buffer.fromstring("\x03\x06\x00\x00\x00Dagger")
+    pcall(function() Event:FireServer("UseActorAbility", {[1] = buf}) end)
+    pcall(function() Event:FireServer("Dagger") end)
 end
 
-local function abDotDestroy()
-    -- removed: dot is permanent once created
-end
-
-_settingsAbToggle = secInterface:Toggle({ Title = "Auto Block", Type = "Checkbox", Flag = "settingsAutoBlock", Default = combatS.autoBlockOn,
-    Callback = function(on)
-        combatS.autoBlockOn = on
-        abDotSetState(on)
-        if on then
-            combatSetupSoundWatcher(); combatStartLoops()
-            abDotCreate()
-        else
-            combatStopLoops()
+-- Flank flip
+local ttActiveFlip = false
+local function ttFlipToKillerBack(killerModel)
+    if ttActiveFlip then return end
+    ttActiveFlip = true
+    ttSetAutoRotate(false)
+    local holdStart = os.clock()
+    local char2     = lp.Character
+    local hrp       = char2 and char2:FindFirstChild("HumanoidRootPart")
+    local startPos  = hrp and hrp.Position or Vector3.new()
+    local sideSign  = 1
+    local khrp      = killerModel and killerModel:FindFirstChild("HumanoidRootPart")
+    if hrp and khrp then
+        if khrp.CFrame.RightVector:Dot(hrp.Position - khrp.Position) < 0 then
+            sideSign = -1
         end
     end
-})
+    local holdConn
+    holdConn = svc.Run.Heartbeat:Connect(function()
+        local elapsed  = os.clock() - holdStart
+        local progress = math.clamp(elapsed / ttS.lungeHoldDuration, 0, 1)
+        khrp = killerModel and killerModel:FindFirstChild("HumanoidRootPart")
+        hrp  = char2 and char2:FindFirstChild("HumanoidRootPart")
+        if progress >= 1 or not hrp or not khrp or not killerModel.Parent then
+            holdConn:Disconnect()
+            ttActiveFlip = false
+            ttSetAutoRotate(true)
+            return
+        end
+        local targetPos = khrp.Position
+            - khrp.CFrame.LookVector * 1.5
+            + khrp.CFrame.RightVector * (1.5 * sideSign)
+        targetPos = Vector3.new(targetPos.X, hrp.Position.Y, targetPos.Z)
+        local lookTarget = khrp.Position + khrp.CFrame.RightVector * (0.6 * sideSign)
+        hrp.CFrame = CFrame.lookAt(startPos:Lerp(targetPos, progress), Vector3.new(lookTarget.X, hrp.Position.Y, lookTarget.Z))
+    end)
+end
 
-local secChatLogger = tabSettings:Section({ Title = "Chat Logger", Opened = true })
-secChatLogger:Toggle({ Title = "Enable Chat Logger", Type = "Checkbox", Flag = "chatLogEnabled", Default = chatLogEnabled,
-    Callback = function(on)
-        chatLogEnabled = on
-        if on then ChatLogger.setup() else ChatLogger.cleanup() end
-    end
-})
-secChatLogger:Button({ Title = "Show / Hide Window", Callback = function() ChatLogger.toggle() end })
-secChatLogger:Button({ Title = "Clear Log",          Callback = function() ChatLogger.clear()  end })
+-- Hook crouch button
+local function hookCrouch()
+    local gui       = lp.PlayerGui:WaitForChild("MainUI")
+    local container = gui:WaitForChild("AbilityContainer")
+    local crouchBtn = container:WaitForChild("Crouch")
 
-local secAntiTaph = tabSettings:Section({ Title = "Anti-Taph", Opened = true })
-secAntiTaph:Toggle({ Title = "Remove Blindness / Effects", Type = "Checkbox", Flag = "antiTaphEnabled", Default = antiTaphEnabled,
-    Callback = function(on)
-        antiTaphEnabled = on
-        if on then AntiTaph.apply() else AntiTaph.remove() end
-    end
-})
+    crouchBtn.MouseButton1Click:Connect(function()
+        if not ttS.enabled then return end
+
+        local killer, _, dist = ttGetNearestKiller()
+        if not killer or dist > ttS.range then return end
+
+        task.spawn(function()
+            if ttS.triggerDelay > 0 then
+                task.wait(ttS.triggerDelay)
+            end
+
+            local freshKiller, _, freshDist = ttGetNearestKiller()
+            if freshKiller == killer and freshDist <= ttS.range then
+                ttFireDagger()
+                task.wait(ttS.flipDelay)
+                ttFlipToKillerBack(freshKiller)
+            end
+        end)
+    end)
+end
+
+hookCrouch()
+
+-- Circle heartbeat
+svc.Run.Heartbeat:Connect(function() ttUpdateCircles() end)
+end) -- end Two-Time pcall
 
 -- TAB: INTERFACE
 ------------------------------------------------------------------------
