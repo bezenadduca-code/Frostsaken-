@@ -1,6 +1,7 @@
 -- SAKIWARE | maintained by mitsuki | original by v1pr/glov
 print("SAKIWARE loaded")
-pcall(function()
+print("TEST FOR AUTO SAVE LOAD CONFIG")
+local _ok, _err = pcall(function()
 
 ------------------------------------------------------------------------
 -- services
@@ -104,95 +105,12 @@ end
 ------------------------------------------------------------------------
 ------------------------------------------------------------------------
 local tabSettings = win:Tab({ Title = "Settings", Icon = "settings" })
-local secInterface = tabSettings:Section({ Title = "Interface", Opened = true })
-
 -- forward-declare so Settings callbacks work before these are defined
 local combatS = { autoBlockOn = false }
 local chatLogEnabled = false
 local ChatLogger = {}
 
--- ── AB indicator dot ─────────────────────────────────────────────────
-local _abDotGui = nil
-local _abDotBtn = nil
-local _abDotDragging, _abDotDragStart, _abDotDragPos = false, nil, nil
-local _settingsAbToggle = nil
-local _g1337AbToggle = nil
-
-local function abDotSetState(on)
-    if _abDotBtn then
-        _abDotBtn.BackgroundColor3 = on and Color3.fromRGB(40, 200, 80) or Color3.fromRGB(200, 40, 40)
-        _abDotBtn.Text = on and "AB" or "ab"
-        _abDotBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    end
-    if _g1337AbToggle then pcall(function() _g1337AbToggle:Set(on) end) end
-    if _settingsAbToggle then pcall(function() _settingsAbToggle:Set(on) end) end
-end
-
 local combatSetupSoundWatcher, combatStartLoops, combatStopLoops
-local function abDotCreate()
-    if _abDotGui and _abDotGui.Parent then return end
-    local pg = lp:FindFirstChildOfClass("PlayerGui"); if not pg then return end
-    _abDotGui = Instance.new("ScreenGui")
-    _abDotGui.Name = "ABDotGui"; _abDotGui.ResetOnSpawn = false
-    _abDotGui.DisplayOrder = 20; _abDotGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    _abDotGui.Parent = pg
-    _abDotBtn = Instance.new("TextButton")
-    _abDotBtn.Size = UDim2.new(0, 52, 0, 52); _abDotBtn.Position = UDim2.new(1, -64, 0.5, -26)
-    _abDotBtn.AnchorPoint = Vector2.new(0, 0); _abDotBtn.BackgroundColor3 = Color3.fromRGB(200, 40, 40)
-    _abDotBtn.BackgroundTransparency = 0; _abDotBtn.BorderSizePixel = 0
-    _abDotBtn.Text = "ab"; _abDotBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    _abDotBtn.TextSize = 13; _abDotBtn.Font = Enum.Font.GothamBold
-    _abDotBtn.AutoButtonColor = false; _abDotBtn.Parent = _abDotGui
-    local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(1, 0); corner.Parent = _abDotBtn
-    _abDotBtn.MouseButton1Click:Connect(function()
-        if _abDotDragging then return end
-        combatS.autoBlockOn = not combatS.autoBlockOn
-        abDotSetState(combatS.autoBlockOn)
-        if combatS.autoBlockOn then
-            if combatSetupSoundWatcher then combatSetupSoundWatcher() end
-            if combatStartLoops then combatStartLoops() end
-        else
-            if combatStopLoops then combatStopLoops() end
-        end
-    end)
-    local _abMouseHeld = false
-    _abDotBtn.InputBegan:Connect(function(inp)
-        if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
-            _abMouseHeld = true; _abDotDragging = false
-            _abDotDragStart = inp.Position; _abDotDragPos = _abDotBtn.Position
-        end
-    end)
-    _abDotBtn.InputEnded:Connect(function(inp)
-        if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
-            _abMouseHeld = false; _abDotDragStart = nil
-            task.delay(0.05, function() _abDotDragging = false end)
-        end
-    end)
-    svc.Input.InputChanged:Connect(function(inp)
-        if not _abMouseHeld or not _abDotDragStart then return end
-        if inp.UserInputType ~= Enum.UserInputType.MouseMovement and inp.UserInputType ~= Enum.UserInputType.Touch then return end
-        local delta = inp.Position - _abDotDragStart
-        if delta.Magnitude > 6 then _abDotDragging = true end
-        if _abDotDragging and _abDotBtn and _abDotBtn.Parent then
-            _abDotBtn.Position = UDim2.new(_abDotDragPos.X.Scale, _abDotDragPos.X.Offset + delta.X, _abDotDragPos.Y.Scale, _abDotDragPos.Y.Offset + delta.Y)
-        end
-    end)
-    abDotSetState(combatS.autoBlockOn)
-end
-
-_settingsAbToggle = secInterface:Toggle({ Title = "Auto Block", Type = "Checkbox", Flag = "settingsAutoBlock", Default = false,
-    Callback = function(on)
-        combatS.autoBlockOn = on
-        abDotSetState(on)
-        if on then
-            if combatSetupSoundWatcher then combatSetupSoundWatcher() end
-            if combatStartLoops then combatStartLoops() end
-            abDotCreate()
-        else
-            if combatStopLoops then combatStopLoops() end
-        end
-    end
-})
 
 local secChatLogger = tabSettings:Section({ Title = "Chat Logger", Opened = true })
 secChatLogger:Toggle({ Title = "Enable Chat Logger", Type = "Checkbox", Flag = "chatLogEnabled", Default = false,
@@ -617,73 +535,6 @@ do
 end
 
 ------------------------------------------------------------------------
--- ANTI-TAPH MODULE (ported from lovesaken)
-------------------------------------------------------------------------
-local antiTaphEnabled = false
-local AntiTaph = {}
-do
-    local origLighting = {}
-    local origEffects  = {}
-    local taphConns    = {}
-    local Lighting     = game:GetService("Lighting")
-
-    function AntiTaph.apply()
-        if not antiTaphEnabled then return end
-        pcall(function()
-            origLighting.Brightness     = Lighting.Brightness
-            origLighting.ClockTime      = Lighting.ClockTime
-            origLighting.FogEnd         = Lighting.FogEnd
-            origLighting.FogStart       = Lighting.FogStart
-            origLighting.OutdoorAmbient = Lighting.OutdoorAmbient
-            Lighting.Brightness     = 2
-            Lighting.ClockTime      = 14
-            Lighting.FogEnd         = 100000
-            Lighting.FogStart       = 0
-            Lighting.OutdoorAmbient = Color3.fromRGB(128, 128, 128)
-
-            local function disableEffects(parent)
-                if not parent then return end
-                for _, obj in ipairs(parent:GetDescendants()) do
-                    if obj:IsA("BlurEffect") or obj:IsA("ColorCorrectionEffect") or obj:IsA("BloomEffect") or obj:IsA("SunRaysEffect") then
-                        if not origEffects[obj] then origEffects[obj] = obj.Enabled end
-                        obj.Enabled = false
-                    end
-                    if obj:IsA("Sound") and obj.Name and (obj.Name:lower():find("taph") or obj.Name:lower():find("blind") or obj.Name:lower():find("static")) then
-                        pcall(function() obj.Volume = 0 end)
-                        pcall(function() obj:Stop() end)
-                    end
-                end
-            end
-            disableEffects(svc.WS.CurrentCamera)
-            disableEffects(svc.WS)
-            disableEffects(Lighting)
-
-            table.insert(taphConns, Lighting.DescendantAdded:Connect(function(desc)
-                if desc:IsA("BlurEffect") or desc:IsA("ColorCorrectionEffect") or desc:IsA("BloomEffect") then
-                    pcall(function() desc.Enabled = false end)
-                end
-            end))
-        end)
-    end
-
-    function AntiTaph.remove()
-        pcall(function()
-            if origLighting.Brightness then
-                Lighting.Brightness     = origLighting.Brightness
-                Lighting.ClockTime      = origLighting.ClockTime
-                Lighting.FogEnd         = origLighting.FogEnd
-                Lighting.FogStart       = origLighting.FogStart
-                Lighting.OutdoorAmbient = origLighting.OutdoorAmbient
-            end
-            for effect, wasEnabled in pairs(origEffects) do pcall(function() effect.Enabled = wasEnabled end) end
-            origEffects = {}
-            for _, conn in ipairs(taphConns) do pcall(function() conn:Disconnect() end) end
-            taphConns = {}
-        end)
-    end
-end
-
-------------------------------------------------------------------------
 -- remote helper (used by aimbot + combat)
 ------------------------------------------------------------------------
 local _hbRemote = nil
@@ -737,6 +588,78 @@ secSpeed:Toggle({ Title="Custom Sprint Speed", Type="Checkbox", Flag="speedOn", 
 secSpeed:Input({ Title="Sprint Speed Value", Flag="speedValue", CurrentValue=tostring(speedHack.speed), Placeholder="e.g. 30",
     Callback=function(t) local n=tonumber(t); if n and n>0 and n<=200 then speedHack.speed=n; speedHack.lastApplied=0 end end })
 secSpeed:Button({ Title="Reset to Default", Callback=function() speedStop() end })
+
+------------------------------------------------------------------------
+-- Anti-AFK
+------------------------------------------------------------------------
+local secAntiAfk = tabGlobal:Section({ Title = "Anti-AFK", Opened = true })
+local antiAfk = { on = false, thread = nil }
+
+local function antiAfkStart()
+    if antiAfk.thread then return end
+    antiAfk.thread = task.spawn(function()
+        while antiAfk.on do
+            task.wait(900) -- wait 15 minutes
+            if not antiAfk.on then break end
+            pcall(function()
+                local cam = workspace.CurrentCamera
+                if not cam then return end
+                local originalCF = cam.CFrame
+                local steps = 40 -- 2 seconds at ~20fps
+                -- pan right
+                for i = 1, steps do
+                    pcall(function()
+                        cam.CFrame = cam.CFrame * CFrame.Angles(0, math.rad(-1.5), 0)
+                    end)
+                    task.wait(0.05)
+                end
+                -- pan back left to original
+                for i = 1, steps do
+                    pcall(function()
+                        cam.CFrame = cam.CFrame * CFrame.Angles(0, math.rad(1.5), 0)
+                    end)
+                    task.wait(0.05)
+                end
+            end)
+        end
+        antiAfk.thread = nil
+    end)
+end
+
+local function antiAfkStop()
+    antiAfk.on = false
+    if antiAfk.thread then task.cancel(antiAfk.thread); antiAfk.thread = nil end
+end
+
+secAntiAfk:Toggle({ Title = "Enable Anti-AFK", Type = "Checkbox", Flag = "antiAfkOn", Default = false,
+    Callback = function(on)
+        antiAfk.on = on
+        if on then antiAfkStart() else antiAfkStop() end
+    end
+})
+
+------------------------------------------------------------------------
+-- Fps/Ping Counter
+------------------------------------------------------------------------
+local secFpsPing = tabGlobal:Section({ Title = "Fps/Ping Counter", Opened = true })
+
+secFpsPing:Toggle({ Title = "Fps/Ping Counter", Type = "Checkbox", Flag = "fpsPingOn", Default = false,
+    Callback = function(on)
+        if on then
+            pcall(function()
+                loadstring(game:HttpGet("https://raw.githubusercontent.com/bezenadduca-code/Jjs/refs/heads/main/Fps/Ping%20counter"))()
+            end)
+        else
+            pcall(function()
+                local pg = lp:FindFirstChildOfClass("PlayerGui") or lp:WaitForChild("PlayerGui", 5)
+                if pg then
+                    local gui = pg:FindFirstChild("PerfMonitor")
+                    if gui then gui:Destroy() end
+                end
+            end)
+        end
+    end
+})
 
 ------------------------------------------------------------------------
 ------------------------------------------------------------------------
@@ -1223,6 +1146,7 @@ local function espBindWorld()
         if esp.buildings and (obj.Name=="BuildermanSentry" or obj.Name=="SubspaceTripmine" or obj.Name=="BuildermanDispenser") then espAttach(obj,"esp_b",Color3.fromRGB(255,80,0),false) end
         if obj.Name=="Map" then
             task.wait(1); esp.mapFolder=obj
+            itemTP.pickedUp = 0  -- reset item pickup counter for new match
             obj.ChildAdded:Connect(function(child) task.wait(0.2); if esp.generators and child.Name=="Generator" then espAttach(child,"esp_g",Color3.fromRGB(255,105,180),false) end end)
             obj.ChildRemoved:Connect(function(child) if child.Name=="Generator" then espDetach(child,"esp_g") end end)
             if esp.generators then task.spawn(function() espDoGenerators(true) end) end
@@ -1504,7 +1428,7 @@ local musicTracks = {
     ["ShedVS1xLMS"]              = "https://files.catbox.moe/0q5v9p.mp3",
     ["EternalIShallEndure"]      = "https://files.catbox.moe/c3ohcm.mp3",
     ["ChanceVSMafiosoLMS"]       = "https://files.catbox.moe/0hlm8m.mp3",
-    ["JohnVsJaneLMS"]            = "https://files.catbox.moe/qqxfna.mp3",
+    ["youAndI"]                  = "https://files.catbox.moe/qqxfna.mp3",
     ["SceneSlasherLMS"]          = "https://files.catbox.moe/ap3x4x.mp3",
     ["SynonymsForEternity"]      = "https://files.catbox.moe/uj45ih.mp3",
     ["EternityEpicfied"]         = "https://files.catbox.moe/yrmpvx.mp3",
@@ -2966,7 +2890,7 @@ combatS.abMissChance = 0
 combatS.autoPunchOn = false
 combatS.hdtEnabled = false
 combatS.hdtFlickSpeed = 22
-combatS.hdtFlickDuration = 1.0
+combatS.hdtDuration = 1.0
 combatS.hdtMissChance = 0
 combatS.hdtMoveSpeed = 26
 combatS.killerCircles = false
@@ -3369,44 +3293,70 @@ local combatHDTDragging = false
 local function combatHDTBeginDrag(killerModel, blockTrack)
     pcall(function()
         if combatHDTDragging then return end
-        if combatRollMiss(combatS.hdtMissChance) then return end
 
-        combatHDTDragging = true
-
+        -- Snapshot character state BEFORE miss roll so we can restore instantly on miss
         local char = lp.Character
-        if not char or not killerModel then
-            combatHDTDragging = false
-            return
-        end
+        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+        local hum  = char and char:FindFirstChildOfClass("Humanoid")
 
-        local hrp        = char:FindFirstChild("HumanoidRootPart")
-        local hum        = char:FindFirstChildOfClass("Humanoid")
-        local killerRoot = killerModel:FindFirstChild("HumanoidRootPart") or killerModel.PrimaryPart
+        local origSpeed = hum and hum.WalkSpeed or 16
+        local origJump  = hum and hum.JumpPower  or 50
 
-        if not hrp or not hum or not killerRoot then
-            combatHDTDragging = false
-            return
-        end
-
-        local origSpeed = hum.WalkSpeed
-        local origJump  = hum.JumpPower
-
-        -- Disable Roblox control module so player input cannot fight MoveTo
         local controls = nil
         pcall(function()
             controls = require(lp.PlayerScripts.PlayerModule):GetControls()
-            controls:Disable()
         end)
 
-        -- Freeze sprint module so it cannot write WalkSpeed back
         local sprintMod = nil
         local origSprintSpeed, origMaxSprint
         pcall(function()
             sprintMod = require(svc.RS.Systems.Character.Game.Sprinting)
             origSprintSpeed = sprintMod.SprintSpeed
             origMaxSprint   = sprintMod.MaxSprintSpeed
-            sprintMod.SprintSpeed    = 0
-            sprintMod.MaxSprintSpeed = 0
+        end)
+
+        local function restoreMovement()
+            pcall(function()
+                if sprintMod then
+                    sprintMod.SprintSpeed    = origSprintSpeed or 26
+                    sprintMod.MaxSprintSpeed = origMaxSprint   or 26
+                end
+            end)
+            pcall(function() if controls then controls:Enable() end end)
+            if hum and hum.Parent then
+                hum.WalkSpeed = origSpeed
+                hum.JumpPower = origJump
+                if hrp then hum:MoveTo(hrp.Position) end
+            end
+            combatHDTDragging = false
+        end
+
+        -- Miss roll — restore immediately and bail
+        if combatRollMiss(combatS.hdtMissChance) then
+            restoreMovement()
+            return
+        end
+
+        if not char or not killerModel or not hrp or not hum then
+            restoreMovement()
+            return
+        end
+
+        local killerRoot = killerModel:FindFirstChild("HumanoidRootPart") or killerModel.PrimaryPart
+        if not killerRoot then
+            restoreMovement()
+            return
+        end
+
+        combatHDTDragging = true
+
+        -- Disable controls and freeze sprint module
+        pcall(function() if controls then controls:Disable() end end)
+        pcall(function()
+            if sprintMod then
+                sprintMod.SprintSpeed    = 0
+                sprintMod.MaxSprintSpeed = 0
+            end
         end)
 
         local stopped = false
@@ -3414,19 +3364,7 @@ local function combatHDTBeginDrag(killerModel, blockTrack)
         local function stopMove()
             if stopped then return end
             stopped = true
-            pcall(function()
-                if sprintMod then
-                    sprintMod.SprintSpeed    = origSprintSpeed or 26
-                    sprintMod.MaxSprintSpeed = origMaxSprint   or 26
-                end
-            end)
-            pcall(function()
-                if controls then controls:Enable() end
-            end)
-            hum.WalkSpeed = origSpeed
-            hum.JumpPower = origJump
-            hum:MoveTo(hrp.Position)
-            combatHDTDragging = false
+            restoreMovement()
         end
 
         -- Stop when block animation ends
@@ -3434,13 +3372,18 @@ local function combatHDTBeginDrag(killerModel, blockTrack)
             blockTrack.Stopped:Connect(stopMove)
         end
 
-        -- MoveTo now runs completely unopposed
+        -- Continuously follow killer position + velocity prediction
         hum.WalkSpeed = combatS.hdtMoveSpeed
-        hum:MoveTo(killerRoot.Position)
 
-        -- Safety fallback
         task.spawn(function()
-            hum.MoveToFinished:Wait()
+            local deadline = tick() + combatS.hdtDuration
+            while not stopped and tick() < deadline do
+                if not killerRoot or not killerRoot.Parent then break end
+                local vel = killerRoot.AssemblyLinearVelocity or Vector3.new()
+                local predicted = killerRoot.Position + vel * 0.1
+                hum:MoveTo(predicted)
+                task.wait(0.05)
+            end
             stopMove()
         end)
     end)
@@ -3570,11 +3513,15 @@ combatStartLoops = function()
         end
     end)
 
-    -- Visual tick
+    -- Visual tick (throttled to every 10 frames, only runs if features are active)
     if combatVisualTickConn then combatVisualTickConn:Disconnect() end
+    local _visualThrottle = 0
     combatVisualTickConn = svc.Run.Heartbeat:Connect(function()
-        combatUpdateCircles()
-        combatUpdateFacing()
+        _visualThrottle += 1
+        if _visualThrottle < 10 then return end
+        _visualThrottle = 0
+        if combatS.killerCircles then combatUpdateCircles() end
+        if combatS.facingVisual then combatUpdateFacing() end
     end)
 end
 
@@ -3624,9 +3571,8 @@ end
 -- Auto Punch fires from combatOnBlockAnim after a successful block (0.1s delay)
 
 -- UI Elements
-local _g1337AbToggle = sec_015:Toggle({ Title = "Auto Block (Audio)", Flag = "combatAutoBlock", Default = combatS.autoBlockOn, Callback=function(on) 
+sec_015:Toggle({ Title = "Auto Block (Audio)", Flag = "combatAutoBlock", Default = combatS.autoBlockOn, Callback=function(on) 
         combatS.autoBlockOn=on
-        abDotSetState(on)
         if on then combatSetupSoundWatcher(); combatStartLoops()
         else combatStopLoops() end
     end, Type = "Checkbox"})
@@ -3661,7 +3607,7 @@ sec_017:Toggle({ Title = "Enable HDT", Flag = "combatHDT", Default = combatS.hdt
 sec_017:Slider({ Title = "Sprint Speed", Flag = "combatHDTMoveSpeed", Value = {Min=1,Max=100,Default=combatS.hdtMoveSpeed}, Step = 1, Callback=function(v) combatS.hdtMoveSpeed=v end
 })
 
-sec_017:Slider({ Title = "Move Duration (s)", Flag = "combatHDTFlickDur", Value = {Min=0.1,Max=3.0,Default=combatS.hdtFlickDuration}, Step = 0.1, Callback=function(v) combatS.hdtFlickDuration=v end
+sec_017:Slider({ Title = "Drag Duration (s)", Flag = "combatHDTDur", Value = {Min=0.1,Max=3.0,Default=combatS.hdtDuration}, Step = 0.1, Callback=function(v) combatS.hdtDuration=v end
 })
 
 sec_017:Slider({ Title = "HDT Miss Chance %", Flag = "combatHDTMiss", Value = {Min=0,Max=100,Default=combatS.hdtMissChance}, Step = 1, Callback=function(v) combatS.hdtMissChance=v end
@@ -3885,7 +3831,6 @@ local function ttFlipToKillerBack(killerModel)
     local holdStart = os.clock()
     local char2     = lp.Character
     local hrp       = char2 and char2:FindFirstChild("HumanoidRootPart")
-    local startPos  = hrp and hrp.Position or Vector3.new()
     local sideSign  = 1
     local khrp      = killerModel and killerModel:FindFirstChild("HumanoidRootPart")
     if hrp and khrp then
@@ -3905,24 +3850,25 @@ local function ttFlipToKillerBack(killerModel)
             ttSetAutoRotate(true)
             return
         end
-        local targetPos = khrp.Position
-            - khrp.CFrame.LookVector * 1.5
-            + khrp.CFrame.RightVector * (1.5 * sideSign)
-        targetPos = Vector3.new(targetPos.X, hrp.Position.Y, targetPos.Z)
         local lookTarget = khrp.Position + khrp.CFrame.RightVector * (0.6 * sideSign)
-        hrp.CFrame = CFrame.lookAt(startPos:Lerp(targetPos, progress), Vector3.new(lookTarget.X, hrp.Position.Y, lookTarget.Z))
+        hrp.CFrame = CFrame.lookAt(hrp.Position, Vector3.new(lookTarget.X, hrp.Position.Y, lookTarget.Z))
     end)
 end
 
--- Hook crouch button
+-- Hook crouch via Remote listener (detects UseActorAbility + Crouch buffer)
 local function hookCrouch()
-    local gui       = lp.PlayerGui:WaitForChild("MainUI")
-    local container = gui:WaitForChild("AbilityContainer")
-    local crouchBtn = container:WaitForChild("Crouch")
+    Event.OnClientEvent:Connect(function(eventName, data)
+        if eventName ~= "UseActorAbility" then return end
+        -- verify it's the crouch buffer
+        if type(data) == "table" then
+            local buf = data[1]
+            if typeof(buf) == "buffer" then
+                local str = buffer.tostring(buf)
+                if not str:find("Crouch") then return end
+            end
+        end
 
-    crouchBtn.MouseButton1Click:Connect(function()
         if not ttS.enabled then return end
-
         local killer, _, dist = ttGetNearestKiller()
         if not killer or dist > ttS.range then return end
 
@@ -3930,7 +3876,6 @@ local function hookCrouch()
             if ttS.triggerDelay > 0 then
                 task.wait(ttS.triggerDelay)
             end
-
             local freshKiller, _, freshDist = ttGetNearestKiller()
             if freshKiller == killer and freshDist <= ttS.range then
                 ttFireDagger()
@@ -3958,42 +3903,106 @@ sec_030:Button({ Title = "Close UI", Locked = false, Callback = function()
     if not ok then pcall(function() win:Close() end) end
 end })
 
+print("TEST 2")
 print("SAKIWARE ready")
+
+-- DEBUG: check if filesystem functions are available
+print("[SAKI-CFG] writefile:", writefile ~= nil)
+print("[SAKI-CFG] readfile: ", readfile  ~= nil)
+print("[SAKI-CFG] isfile:   ", isfile    ~= nil)
 
 -- wait for all elements to finish initializing before loading saved values
 task.spawn(function()
-    task.wait(0.5)
-    sakiConfig:Load()
+    task.wait(1.5) -- increased from 0.5 to give WindUI more time to register elements
 
-    -- after load, manually kick off any features that were saved as enabled
-    -- (in case Load() doesn't fire callbacks, which is a known WindUI quirk)
+    print("[SAKI-CFG] Attempting Load()...")
+    local loadOk, loadErr = pcall(function() sakiConfig:Load() end)
+    if loadOk then
+        print("[SAKI-CFG] Load() succeeded")
+    else
+        print("[SAKI-CFG] Load() FAILED:", tostring(loadErr))
+    end
+
+    -- sync Lua variables FROM win.Flags AFTER load
+    -- WindUI restores the UI state but may not fire callbacks, so we read flags directly
     task.defer(function()
-        if stam.on    then stamStart()  end
+        print("[SAKI-CFG] Syncing flags and starting saved features...")
+
+        -- Stamina
+        stam.on      = win.Flags.stamOn      or false
+        stam.noLoss  = win.Flags.stamNoLoss  or false
+        stam.loss    = win.Flags.stamLoss    or stam.loss
+        stam.gain    = win.Flags.stamGain    or stam.gain
+        stam.max     = win.Flags.stamMax     or stam.max
+        stam.current = win.Flags.stamCurrent or stam.current
+        print("[SAKI-CFG] stam.on =", stam.on, "| stam.noLoss =", stam.noLoss)
+        if stam.on or stam.noLoss then stamStart() end
         if stam.noLoss then stamApply() end
+
+        -- Speed Hack
+        speedHack.on = win.Flags.speedOn or false
+        print("[SAKI-CFG] speedHack.on =", speedHack.on)
         if speedHack.on then speedStart() end
-        if abs.on     then absStart()   end
-        -- flow and AI loops check their flags each tick, no explicit start needed
+
+        -- Anti-Backstab
+        abs.on = win.Flags.absOn or false
+        print("[SAKI-CFG] abs.on =", abs.on)
+        if abs.on then absStart() end
+
+        -- Auto Solve (flow)
+        flow.on = win.Flags.flowOn or false
+        print("[SAKI-CFG] flow.on =", flow.on)
+        -- flow checks its flag each tick, no explicit start needed
+
+        -- ESP
+        esp.killers    = win.Flags.espKillers    or false
+        esp.survivors  = win.Flags.espSurvivors  or false
+        esp.generators = win.Flags.espGenerators or false
+        esp.items      = win.Flags.espItems      or false
+        esp.buildings  = win.Flags.espBuildings  or false
+        print("[SAKI-CFG] esp: killers =", esp.killers, "| survivors =", esp.survivors, "| generators =", esp.generators, "| items =", esp.items, "| buildings =", esp.buildings)
         if esp.killers    then task.spawn(function() espDoKillers(true)    end) end
         if esp.survivors  then task.spawn(function() espDoSurvivors(true)  end) end
         if esp.generators then task.spawn(function() espDoGenerators(true) end) end
         if esp.items      then task.spawn(function() espDoItems(true)      end) end
         if esp.buildings  then task.spawn(function() espDoBuildings(true)  end) end
+
+        -- Minion ESP (mset)
+        mset.pizza  = win.Flags.espPizza  or false
+        mset.zombie = win.Flags.espZombie or false
+        mset.puddle = win.Flags.espPuddle or false
+        print("[SAKI-CFG] mset: pizza =", mset.pizza, "| zombie =", mset.zombie, "| puddle =", mset.puddle)
         if mset.pizza  then task.spawn(scanPizza)   end
         if mset.zombie then task.spawn(scanZombie)  end
         if mset.puddle then task.spawn(scanPuddles) end
-        if music.on        then music.thread = task.spawn(musicMonitor) end
-        if chatLogEnabled  then ChatLogger.setup()  end
-        if antiTaphEnabled then AntiTaph.apply()    end
-        -- ab dot is always visible regardless of AB state
-        abDotCreate()
+
+        -- Music
+        music.on = win.Flags.musicOn or false
+        print("[SAKI-CFG] music.on =", music.on)
+        if music.on then music.thread = task.spawn(musicMonitor) end
+
+        -- Chat Logger
+        chatLogEnabled = win.Flags.chatLogEnabled or false
+        print("[SAKI-CFG] chatLogEnabled =", chatLogEnabled)
+        if chatLogEnabled then ChatLogger.setup() end
+
+        print("[SAKI-CFG] Feature restore complete.")
     end)
 end)
 
--- auto-save: runs every 2s, deferred so element values are always settled before writing
+-- auto-save: runs every 2s
 task.spawn(function()
     while true do
         task.wait(2)
-        sakiConfig:Save()
+        local saveOk, saveErr = pcall(function() sakiConfig:Save() end)
+        if not saveOk then
+            print("[SAKI-CFG] Save() FAILED:", tostring(saveErr))
+        end
     end
 end)
+
 end)
+if not _ok then
+    warn("[SAKIWARE ERROR]", tostring(_err))
+    print("[SAKIWARE ERROR]", tostring(_err))
+end
