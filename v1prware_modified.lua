@@ -109,9 +109,9 @@ end
 ------------------------------------------------------------------------
 local popupDone = false
 ui:Popup({
-    Title   = GradientText("hutao [FORSAKEN]", Color3.fromHex("#E8194B"), Colors.Gold),
+    Title   = GradientText("V1.0.9 CHAT R WE BACK!?", Color3.fromHex("#E8194B"), Colors.Gold),
     Icon    = "sparkles",
-    Content = GradientText("V1.0.9 CHAT R WE BACK!?", Colors.Gold, Colors.LightBlue),
+    Content = GradientText("maintained by mitsuki", Colors.Gold, Colors.LightBlue),
     Buttons = {
         { Title = "ok",     Callback = function() popupDone = true end,                Variant = "Tertiary" },
         { Title = GradientText("YESSSSIIIIRRRRRR", Color3.fromHex("#E8194B"), Colors.Gold), Callback = function() popupDone = true end, Variant = "Primary" },
