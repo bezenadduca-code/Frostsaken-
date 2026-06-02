@@ -240,10 +240,6 @@ secUpdateLogs:Paragraph({
 • Turning it off removes it cleanly
 • Added Credits tab — Storm (GUI), mitsuki (Scripter), special thanks to glov/v1pr
 • Added Config Share section — copy your config as a string and load anyone's config instantly
-• Fixed HDT restoreMovement freezing player when block misses — removed MoveTo, controls restore cleanly now
-• Fixed all silent aims conflicting — JD, Nova (Noli), Plasma (Dusekkar) now share one RF hook via rfDispatch so they never break each other
-• Popup updated — title now says hutao [FORSAKEN], content says V1.0.9 CHAT R WE BACK!?
-• Continue button renamed to YESSSSIIIIRRRRRR, Exit renamed to ok and now loads the GUI too
 ]],
     Thumbnail = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTIlF85el7kKB1e-xpvnwBJmOq9dripkUhY65rFpyyLrQ&s=10",
     ThumbnailSize = 500
