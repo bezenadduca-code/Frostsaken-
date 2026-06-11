@@ -1,6 +1,5 @@
 -- Hutao [forsaken] V1.0.9
 print("Hutao [forsaken] V1.0.9 loaded")
-print("TEST 1")
 local _ok, _err = pcall(function()
 
 ------------------------------------------------------------------------
